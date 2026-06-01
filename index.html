@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Construtora Senger — Tabela de Preços e Disponibilidade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+      <rect width="400" height="300" fill="#26313B"/>
+      <g transform="translate(150,96)">
+        <rect x="0" y="40" width="34" height="96" fill="#ffffff"/>
+        <rect x="40" y="16" width="34" height="120" fill="#ffffff"/>
+        <rect x="80" y="54" width="34" height="82" fill="#178FA0"/>
+      </g>
+      <text x="200" y="206" text-anchor="middle" fill="#ffffff" font-family="'Montserrat',sans-serif" font-weight="700" font-size="34" letter-spacing="4">SENGER</text>
+      <text x="200" y="234" text-anchor="middle" fill="#178FA0" font-family="'Montserrat',sans-serif" font-size="12" letter-spacing="3">TABELA DE PREÇOS</text>
+    </svg>
+  </template>
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img src="assets/senger-logo.png" alt="Construtora Senger — desde 1967">
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-meta">
+          <div class="tm"><span class="k">Tabela</span><span class="v" id="hero-mes"></span></div>
+          <div class="tm"><span class="k">Disponíveis</span><span class="v"><span id="hero-unid"></span> unid.</span></div>
+          <div class="tm"><span class="k">Atualizada</span><span class="v" id="hero-data"></span></div>
+        </div>
+        <div class="incc-badge">
+          <span class="lbl">INCC</span>
+          <span class="val" id="incc-val"></span>
+        </div>
+        <button class="btn-contact" id="btn-contact">Falar com a Senger</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- BACK BAR (detail mode) -->
+  <div class="back-bar" id="back-bar">
+    <button class="btn-back" id="btn-back">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg>
+      Voltar
+    </button>
+    <span class="back-title" id="back-title"></span>
+  </div>
+
+  <!-- MASTHEAD -->
+  <section class="masthead">
+    <img class="mast-photo" src="assets/fachada.jpg" alt="Construtora Senger — fachada">
+    <div class="masthead-inner">
+      <h1>Tabela de Preços</h1>
+      <div class="mh-meta">
+        <span id="ms-mes">—</span><i></i><span><strong id="ms-disp">—</strong> unidades disponíveis</span><i></i><span>INCC <strong id="ms-incc">—</strong></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUICK NAV -->
+  <section class="quicknav" id="empreendimentos">
+    <div class="quicknav-inner">
+      <p class="qn-title">Empreendimentos</p>
+      <div class="qn-grid" id="quicknav"></div>
+    </div>
+  </section>
+
+  <!-- FILTERS -->
+  <div class="filters">
+    <div class="filters-inner">
+      <div class="filter-row">
+        <div class="seg">
+          <button data-cat="todos" class="active">Todos</button>
+          <button data-cat="residencial">Residencial</button>
+          <button data-cat="comercial">Comercial</button>
+          <button data-cat="terreno">Terrenos</button>
+          <button data-cat="outros">Outros</button>
+        </div>
+        <div class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="search-input" type="text" placeholder="Buscar por empreendimento, apto, cidade…">
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="chip-group" id="cidade-chips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <span style="width:1px;height:22px;background:var(--line);margin:0 4px"></span>
+        <div class="chip-group" id="status-chips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <div class="select-wrap">
+          <select id="faixa-select">
+            <option value="todas">Qualquer valor</option>
+            <option value="0-300">Até R$ 300 mil</option>
+            <option value="300-600">R$ 300–600 mil</option>
+            <option value="600-1000">R$ 600 mil – 1 mi</option>
+            <option value="1000+">Acima de R$ 1 mi</option>
+          </select>
+        </div>
+        <span class="filter-meta" id="count"></span>
+        <button class="btn-clear" id="btn-clear">Limpar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <main>
+    <div class="wrap">
+      <div id="emp-list"></div>
+      <div class="empty" id="empty" style="display:none">
+        <div class="big">Nenhum imóvel encontrado</div>
+        <div>Ajuste os filtros ou limpe a busca para ver todas as opções.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <img class="fb-logo" src="assets/senger-logo-branco.png" alt="Construtora Senger">
+          <p>Empreendimentos residenciais e comerciais em Carazinho/RS e região, com a solidez e a qualidade que você procura para morar ou investir.</p>
+          <p class="foot-tagline">Solidez, confiança e futuro.</p>
+        </div>
+        <div class="foot-col">
+          <h4>Contato</h4>
+          <div id="foot-contacts"></div>
+        </div>
+        <div class="foot-col">
+          <h4>Links</h4>
+          <div id="foot-links"></div>
+        </div>
+      </div>
+      <div class="foot-bottom">
+        <span id="foot-endereco"></span>
+        <span id="foot-data"></span>
+      </div>
+    </div>
+  </footer>
+
+  <div class="disclaimer">
+    <div class="wrap">
+      Valores e disponibilidade sujeitos a alteração sem aviso prévio. Imagens meramente ilustrativas. Esta tabela não constitui oferta nem proposta de venda. Consulte sempre as condições vigentes com a Construtora Senger.
+    </div>
+  </div>
+
+  <!-- WhatsApp float -->
+  <button class="wa-float" id="wa-float" aria-label="WhatsApp">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2zm5.8 14.13c-.24.68-1.42 1.31-1.96 1.36-.5.05-.99.24-3.32-.7-2.79-1.13-4.55-3.99-4.69-4.18-.14-.19-1.13-1.5-1.13-2.86 0-1.36.71-2.03.96-2.31.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.81 1.91.88 2.05.07.14.12.3.02.49-.1.19-.14.3-.28.46-.14.16-.3.36-.42.49-.14.14-.29.29-.12.57.17.27.74 1.22 1.59 1.98 1.1.97 2.02 1.28 2.3 1.42.28.14.45.12.61-.07.16-.19.71-.82.9-1.1.19-.28.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.21.53.32.07.12.07.66-.17 1.34z"/></svg>
+  </button>
+
+  <!-- MODAL -->
+  <div class="modal-back" id="modal-back">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- LIGHTBOX -->
+  <div class="lightbox" id="lightbox">
+    <button class="lb-close" aria-label="Fechar">✕</button>
+    <button class="lb-nav lb-prev" aria-label="Anterior">‹</button>
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="">
+    <button class="lb-nav lb-next" aria-label="Próxima">›</button>
+    <div class="lb-cap"></div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
