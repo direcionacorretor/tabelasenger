@@ -15,6 +15,14 @@
     reservado: "Reservado",
     vendido: "Vendido",
   };
+  // Rótulo da unidade: prefixa "Apto"/"Sala" só quando o código é numérico;
+  // rótulos textuais (ex.: "Sala 04") são exibidos como estão.
+  const aptoLabel = (emp, u) =>
+    /^\d/.test(String(u.apto))
+      ? (emp.categoria === "comercial" ? "Sala " : "Apto ") + u.apto
+      : u.apto;
+  // Preço com tratamento para unidades sem valor (vendidas/sob consulta).
+  const fmtPreco = (n) => (n ? fmtBRL(n) : "—");
   const CAT_LABEL = {
     residencial: "Residencial",
     comercial: "Comercial",
@@ -74,29 +82,32 @@
 
   // count totals
   let totalUnid = 0,
-    totalDisp = 0;
+    totalDisp = 0,
+    dispAptos = 0,
+    dispTerrenos = 0;
   EMPREENDIMENTOS.forEach((e) => {
     (e.grupos || []).forEach((g) =>
       g.unidades.forEach((u) => {
         totalUnid++;
-        if (u.status === "disponivel") totalDisp++;
+        if (u.status !== "vendido" && u.status !== "reservado") { totalDisp++; dispAptos++; }
       })
     );
     (e.terrenos || []).forEach((t) => {
       totalUnid++;
-      if ((t.status || "disponivel") !== "vendido") totalDisp++;
+      if ((t.status || "disponivel") !== "vendido") { totalDisp++; dispTerrenos++; }
     });
     (e.outros || []).forEach((o) => {
       totalUnid++;
-      if (o.status === "disponivel") totalDisp++;
+      if (o.status !== "vendido" && o.status !== "reservado") { totalDisp++; dispAptos++; }
     });
   });
-  document.getElementById("hero-unid").textContent = totalDisp;
+  document.getElementById("hero-unid").textContent = dispAptos + " aptos · " + dispTerrenos + " terrenos";
 
   // institutional strip under masthead
   const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   setTxt("ms-mes", META.mesTabela);
-  setTxt("ms-disp", totalDisp);
+  setTxt("ms-aptos", dispAptos);
+  setTxt("ms-terrenos", dispTerrenos);
   setTxt("ms-incc", META.incc.variacao);
 
   // ---------- contact buttons ----------
@@ -119,8 +130,8 @@
     const tile = el(`
       <button class="unit" data-status="${u.status}" data-price="${u.preco}"
         data-search="${(emp.nome + " " + grupo.tipo + " " + u.apto + " " + emp.cidade).toLowerCase()}">
-        <span class="u-apto">${emp.categoria === "comercial" ? "Sala" : "Apto"} ${u.apto}</span>
-        <span class="u-price">${fmtBRL(u.preco)}</span>
+        <span class="u-apto">${aptoLabel(emp, u)}</span>
+        <span class="u-price">${fmtPreco(u.preco)}</span>
         <span class="u-area">${area}</span>
         <span class="u-foot">
           <span class="st st-${u.status}">${STATUS_LABEL[u.status]}</span>
@@ -160,8 +171,7 @@
     const statusCls = emp.status === "pronto" ? "status-pronto" : "status-obra";
     const banner = el(`
       <div class="emp-banner ${emp.hero ? "" : "noimg"}">
-        ${emp.hero ? `<img class="bg" src="${emp.hero}" alt="${emp.nome}">` : ""}
-        ${emp.logo ? `<img class="emp-logo" src="${emp.logo}" alt="${emp.nome}">` : ""}
+        ${emp.hero ? `<div class="banner-media"><img class="bg" src="${emp.hero}" alt="${emp.nome}">${emp.logo ? `<img class="emp-logo" src="${emp.logo}" alt="${emp.nome}">` : ""}</div>` : ""}
         <div class="emp-banner-content">
           <div class="emp-badges">
             <span class="badge cidade">${emp.cidade}</span>
@@ -362,13 +372,28 @@
   function empDisponiveis(emp) {
     let n = 0;
     (emp.grupos || []).forEach((g) =>
-      g.unidades.forEach((u) => u.status === "disponivel" && n++)
+      g.unidades.forEach((u) => u.status !== "vendido" && u.status !== "reservado" && n++)
     );
     (emp.terrenos || []).forEach((t) => {
       if ((t.status || "disponivel") !== "vendido") n++;
     });
-    (emp.outros || []).forEach((o) => o.status === "disponivel" && n++);
+    (emp.outros || []).forEach((o) => o.status !== "vendido" && o.status !== "reservado" && n++);
     return n;
+  }
+  function empMinPreco(emp) {
+    let min = Infinity;
+    (emp.grupos || []).forEach((g) =>
+      g.unidades.forEach((u) => {
+        if (u.status !== "vendido" && u.status !== "reservado" && u.preco) min = Math.min(min, u.preco);
+      })
+    );
+    (emp.terrenos || []).forEach((t) => {
+      if ((t.status || "disponivel") !== "vendido" && t.preco) min = Math.min(min, t.preco);
+    });
+    (emp.outros || []).forEach((o) => {
+      if (o.status !== "vendido" && o.status !== "reservado" && o.preco) min = Math.min(min, o.preco);
+    });
+    return min === Infinity ? null : min;
   }
   EMPREENDIMENTOS.forEach((emp) => {
     const thumb = emp.hero || (emp.galeria && emp.galeria[0] && emp.galeria[0].src);
@@ -381,16 +406,21 @@
       ? `${emp.outros.length} ${emp.outros.length === 1 ? "imóvel" : "imóveis"}`
       : disp + (disp === 1 ? " disponível" : " disponíveis");
     const stCls = emp.status === "pronto" ? "pronto" : "obra";
+    const minPreco = empMinPreco(emp);
+    const catLabel = emp.categoria === "terreno" ? "Terrenos" : emp.categoria === "comercial" ? "Salas comerciais" : "Apartamentos";
     const card = el(`
       <button class="qn-card" data-target="emp-${emp.id}">
         <div class="qn-thumb">
-          ${thumb ? `<img src="${thumb}" alt="${emp.nome}">` : ""}
+          ${thumb ? `<img src="${thumb}" alt="${emp.nome}">` : `<div class="qn-noimg">${catLabel}</div>`}
           <span class="qn-st ${stCls}">${emp.statusLabel}</span>
         </div>
         <div class="qn-body">
           <div class="qn-name">${emp.nome}</div>
           <div class="qn-city">${emp.cidade}</div>
-          <div class="qn-count ${cnt ? "" : "zero"}">${countLabel}</div>
+          <div class="qn-foot">
+            ${minPreco ? `<div class="qn-price"><span>a partir de</span><strong>${fmtBRL(minPreco)}</strong></div>` : `<div class="qn-price consulta"><strong>Sob consulta</strong></div>`}
+            <div class="qn-count ${cnt ? "" : "zero"}">${countLabel}</div>
+          </div>
         </div>
       </button>`);
     card.dataset.empId = emp.id;
@@ -580,6 +610,7 @@
     const heroImg = emp.hero || (media[0] && media[0].src);
     const tags = (u.tags || []).map((t) => `<span class="utag">${t}</span>`).join(" ");
     const tipoLabel = emp.categoria === "comercial" ? "Sala" : "Apto";
+    const unitLabel = aptoLabel(emp, u);
     const galThumbs = media
       .map(
         (m, i) =>
@@ -597,11 +628,11 @@
       </div>
       <div class="modal-body">
         <div class="modal-facts">
-          <div class="fact"><div class="fk">Unidade</div><div class="fv">${tipoLabel} ${u.apto}</div></div>
+          <div class="fact"><div class="fk">Unidade</div><div class="fv">${unitLabel}</div></div>
           <div class="fact"><div class="fk">Tipologia</div><div class="fv">${grupo.tipo}</div></div>
           <div class="fact"><div class="fk">Área</div><div class="fv">${area}</div></div>
           ${grupo.garagem ? `<div class="fact"><div class="fk">Garagem</div><div class="fv">${grupo.garagem}</div></div>` : ""}
-          <div class="fact"><div class="fk">Valor</div><div class="fv price">${fmtBRL(u.preco)}</div></div>
+          <div class="fact"><div class="fk">Valor</div><div class="fv price">${fmtPreco(u.preco)}</div></div>
           <div class="fact"><div class="fk">Situação</div><div class="fv"><span class="st st-${u.status}">${STATUS_LABEL[u.status]}</span> ${tags}</div></div>
         </div>
         ${grupo.obs ? `<div class="modal-obs">${grupo.obs}</div>` : ""}
@@ -609,7 +640,7 @@
         ${media.length ? `<div class="modal-gallery">${galThumbs}</div>` : ""}
         <div class="modal-cta">
           <a class="btn-ghost btn-wa" target="_blank" href="${waLink(
-            `Olá! Tenho interesse no ${tipoLabel} ${u.apto} do ${emp.nome} (${emp.cidade}) — ${fmtBRLshort(u.preco)}. Podemos conversar?`
+            `Olá! Tenho interesse no ${unitLabel} do ${emp.nome} (${emp.cidade})${u.preco ? " — " + fmtBRLshort(u.preco) : ""}. Podemos conversar?`
           )}">${waSvg()} Tenho interesse neste ${tipoLabel.toLowerCase()}</a>
           <button class="btn-ghost" id="modal-gallery-btn">${galSvg()} Ver todas as imagens</button>
         </div>
