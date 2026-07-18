@@ -1,786 +1,884 @@
-/* ============================================================
-   Senger — Tabela de Preços online · render + filtros + modal
-   ============================================================ */
-(function () {
-  const { META, EMPREENDIMENTOS, LOCAIS = {} } = window.SENGER;
-  const WA = META.contato.whatsapp;
+/* Construtora Senger — Portfólio Comercial v1.0 */
+(() => {
+  "use strict";
 
-  // ---------- helpers ----------
-  const fmtBRL = (n) =>
-    "R$ " + n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-  const fmtBRLshort = (n) => "R$ " + n.toLocaleString("pt-BR");
-  const STATUS_LABEL = {
-    disponivel: "Disponível",
-    alugado: "Alugado",
-    reservado: "Reservado",
-    vendido: "Vendido",
+  const source = window.SENGER || {};
+  const storage = {
+    memory: new Map(),
+    get(key, fallback = null) {
+      try {
+        const value = window.localStorage.getItem(key);
+        return value === null ? fallback : value;
+      } catch (_) {
+        return this.memory.has(key) ? this.memory.get(key) : fallback;
+      }
+    },
+    set(key, value) {
+      const normalized = String(value);
+      try { window.localStorage.setItem(key, normalized); } catch (_) { this.memory.set(key, normalized); }
+    },
   };
-  // Rótulo da unidade: prefixa "Apto"/"Sala" só quando o código é numérico;
-  // rótulos textuais (ex.: "Sala 04") são exibidos como estão.
-  const aptoLabel = (emp, u) =>
-    /^\d/.test(String(u.apto))
-      ? (emp.categoria === "comercial" ? "Sala " : "Apto ") + u.apto
-      : u.apto;
-  // Preço com tratamento para unidades sem valor (vendidas/sob consulta).
-  const fmtPreco = (n) => (n ? fmtBRL(n) : "—");
-  const CAT_LABEL = {
+  const META = source.META || {};
+  const EMPREENDIMENTOS = (source.EMPREENDIMENTOS || []).filter((emp) => emp.confirmado !== false);
+  const LOCAIS = source.LOCAIS || {};
+
+  const CATEGORY_LABELS = {
+    todos: "Todos",
     residencial: "Residencial",
     comercial: "Comercial",
     terreno: "Terrenos",
     outros: "Outros",
   };
-  function waLink(msg) {
-    return `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
-  }
-  // link para ENCAMINHAR o produto a um cliente (abre direto no empreendimento)
-  function shareWaHref(emp) {
-    const url = location.origin + location.pathname + "#emp-" + emp.id;
-    const msg = `${emp.nome} — Construtora Senger (${emp.cidade})\nVeja os valores e a disponibilidade:\n${url}`;
-    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  }
-  function el(html) {
-    const t = document.createElement("template");
-    t.innerHTML = html.trim();
-    return t.content.firstElementChild;
-  }
 
-  // classify media into fotos / plantas / mapas
-  function splitMedia(emp) {
-    const fotos = [],
-      plantas = [],
-      mapas = [];
-    if (emp.hero) fotos.push({ src: emp.hero, legenda: emp.nome });
-    (emp.galeria || []).forEach((g) => {
-      const l = (g.legenda || "").toLowerCase();
-      const s = (g.src || "").toLowerCase();
-      if (l.includes("planta") || l.includes("urbanismo") || l.includes("lotes")) plantas.push(g);
-      else if (l.includes("mapa") || l.includes("localiz") || l.includes("praça") || s.includes("-map") || s.includes("-mapa")) mapas.push(g);
-      else fotos.push(g);
-    });
-    return { fotos, plantas, mapas };
-  }
-  // all photos (for unit modal gallery)
-  function empMedia(emp) {
-    const { fotos, plantas } = splitMedia(emp);
-    return fotos.concat(plantas);
-  }
+  const STATUS_LABELS = {
+    disponivel: "Disponível",
+    alugado: "Alugado",
+    reservado: "Reservado",
+    vendido: "Vendido",
+  };
 
-  // ---------- state ----------
   const state = {
-    cat: "todos",
-    cidade: "todas",
-    status: "todos",
-    faixa: "todas",
-    q: "",
+    query: "",
+    category: "todos",
+    city: "todos",
+    stage: "todos",
+    price: "todos",
+    availableOnly: true,
+    sort: "destaque",
+    hidePrices: storage.get("senger-hide-prices", "false") === "true",
+    selected: new Set(JSON.parse(storage.get("senger-selection", "[]"))),
+    lightbox: { media: [], index: 0 },
   };
 
-  // ---------- build header / hero ----------
-  document.getElementById("incc-val").innerHTML =
-    `${META.incc.valor} <span>${META.incc.variacao}</span>`;
-  document.getElementById("hero-mes").textContent = META.mesTabela;
-  document.getElementById("hero-data").textContent = META.dataTabela;
+  const itemMap = new Map();
+  const enterpriseItems = new Map();
 
-  // count totals
-  let totalUnid = 0,
-    totalDisp = 0,
-    dispAptos = 0,
-    dispTerrenos = 0;
-  EMPREENDIMENTOS.forEach((e) => {
-    (e.grupos || []).forEach((g) =>
-      g.unidades.forEach((u) => {
-        totalUnid++;
-        if (u.status !== "vendido" && u.status !== "reservado") { totalDisp++; dispAptos++; }
-      })
-    );
-    (e.terrenos || []).forEach((t) => {
-      totalUnid++;
-      if ((t.status || "disponivel") !== "vendido") { totalDisp++; dispTerrenos++; }
+  const money = (value) => {
+    if (!Number.isFinite(Number(value)) || Number(value) <= 0) return "Sob consulta";
+    return Number(value).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 0,
     });
-    (e.outros || []).forEach((o) => {
-      totalUnid++;
-      if (o.status !== "vendido" && o.status !== "reservado") { totalDisp++; dispAptos++; }
-    });
-  });
-  document.getElementById("hero-unid").textContent = dispAptos + " aptos · " + dispTerrenos + " terrenos";
-
-  // institutional strip under masthead
-  const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-  setTxt("ms-mes", META.mesTabela);
-  setTxt("ms-aptos", dispAptos);
-  setTxt("ms-terrenos", dispTerrenos);
-  setTxt("ms-incc", META.incc.variacao);
-
-  // ---------- contact buttons ----------
-  const waGeneral = waLink(
-    "Olá! Vi a tabela de preços online da Senger e gostaria de mais informações."
-  );
-  document.getElementById("btn-contact").onclick = () =>
-    window.open(waGeneral, "_blank");
-  document.getElementById("wa-float").onclick = () =>
-    window.open(waGeneral, "_blank");
-
-  // ---------- render empreendimentos ----------
-  const main = document.getElementById("emp-list");
-
-  function unitTile(emp, grupo, u) {
-    const area = u.areaUnit || grupo.area;
-    const tags = (u.tags || [])
-      .map((t) => `<span class="utag">${t}</span>`)
-      .join("");
-    const tile = el(`
-      <button class="unit" data-status="${u.status}" data-price="${u.preco}"
-        data-search="${(emp.nome + " " + grupo.tipo + " " + u.apto + " " + emp.cidade).toLowerCase()}">
-        <span class="u-apto">${aptoLabel(emp, u)}</span>
-        <span class="u-price">${fmtPreco(u.preco)}</span>
-        <span class="u-area">${area}</span>
-        <span class="u-foot">
-          <span class="st st-${u.status}">${STATUS_LABEL[u.status]}</span>
-          ${tags}
-        </span>
-      </button>`);
-    tile.addEventListener("click", () => openModal(emp, grupo, u));
-    return tile;
-  }
-
-  // Mapa verificado de planta por empreendimento (conferido pelas áreas
-  // impressas em cada planta). Evolutti tem 2 plantas (2 dorm / 3 dorm).
-  // Um grupo pode sobrescrever com g.planta (nome do arquivo, sem caminho).
-  const PLANTA_BY_EMP = {
-    prime: () => "prime-planta",
-    personalite: () => "perso-planta",
-    boulevard: () => "bv-planta",
-    "premium-office": () => "po-planta",
-    evolutti: (g) => (/3\s*dorm/i.test(g.tipo) ? "evo-p3" : "evo-p2"),
-  };
-  function plantaForGrupo(emp, plantas, g) {
-    if (!plantas || !plantas.length) return null;
-    let key = g.planta;
-    if (!key && PLANTA_BY_EMP[emp.id]) key = PLANTA_BY_EMP[emp.id](g);
-    if (!key) return null;
-    key = key.replace(/^assets\//, "").replace(/\.[a-z]+$/i, "");
-    const i = plantas.findIndex(
-      (p) => p.src.split("/").pop().replace(/\.[a-z]+$/i, "") === key
-    );
-    return i >= 0 ? { planta: plantas[i], idx: i } : null;
-  }
-
-  function renderEmp(emp) {
-    const sec = el(`<section class="emp" id="emp-${emp.id}" data-cat="${emp.categoria}" data-cidade="${emp.cidade}"></section>`);
-
-    // banner
-    const statusCls = emp.status === "pronto" ? "status-pronto" : "status-obra";
-    const banner = el(`
-      <div class="emp-banner ${emp.hero ? "" : "noimg"}">
-        ${emp.hero ? `<div class="banner-media"><img class="bg" src="${emp.hero}" alt="${emp.nome}">${emp.logo ? `<img class="emp-logo" src="${emp.logo}" alt="${emp.nome}">` : ""}</div>` : ""}
-        <div class="emp-banner-content">
-          <div class="emp-badges">
-            <span class="badge cidade">${emp.cidade}</span>
-            <span class="badge ${statusCls}">${emp.statusLabel}</span>
-            ${emp.categoria === "comercial" ? '<span class="badge">Comercial</span>' : ""}
-          </div>
-          <h2>${emp.nome}</h2>
-          ${emp.tagline ? `<p class="emp-tagline">"${emp.tagline}"</p>` : ""}
-          ${emp.ri && emp.ri.length ? `<div class="emp-ri">${emp.ri.map((r) => `<span>${r}</span>`).join("")}</div>` : ""}
-          <a class="btn-share-wa" target="_blank" rel="noopener" href="${shareWaHref(emp)}">${waSvg()} Enviar por WhatsApp</a>
-        </div>
-      </div>`);
-    sec.appendChild(banner);
-
-    const body = el(`<div class="emp-body"></div>`);
-
-    // diferenciais
-    if (emp.diferenciais && emp.diferenciais.length) {
-      const strip = el(`<div class="dif-strip"></div>`);
-      emp.diferenciais.forEach((d) =>
-        strip.appendChild(
-          el(`<div class="dif"><div class="di">${difIcon(d.titulo)}</div><div class="dt">${d.titulo}</div><div class="dd">${d.desc}</div></div>`)
-        )
-      );
-      body.appendChild(strip);
-    }
-    // localizacao
-    if (emp.localizacao) {
-      body.appendChild(
-        el(`<div class="emp-loc">${pinSvg()}<span>${emp.localizacao}</span></div>`)
-      );
-    }
-    if (emp.condicoes && !emp.consulta) {
-      body.appendChild(el(`<div class="emp-cond">${emp.condicoes}</div>`));
-    }
-
-    // grupos de unidades
-    if (emp.grupos && emp.grupos.length) {
-      const plantasEmp = splitMedia(emp).plantas;
-      const gw = el(`<div class="grupos"></div>`);
-      emp.grupos.forEach((g) => {
-        const pf = plantaForGrupo(emp, plantasEmp, g);
-        const gEl = el(`
-          <div class="grupo">
-            <div class="grupo-head">
-              <div class="gh-text">
-                <span class="gt">${g.tipo}</span>
-                ${g.area ? `<span class="ga">${g.area}</span>` : ""}
-                ${g.garagem ? `<span class="gg">${g.garagem}</span>` : ""}
-              </div>
-              ${pf ? `<button class="grupo-planta" type="button" aria-label="Ver planta ampliada" title="Ver planta ampliada">
-                <img src="${pf.planta.src}" alt="Planta — ${g.tipo}">
-                <span class="gp-label">Ver planta</span>
-              </button>` : ""}
-            </div>
-            ${g.obs ? `<div class="grupo-obs">${g.obs}</div>` : ""}
-            <div class="units"></div>
-          </div>`);
-        if (pf) {
-          gEl.querySelector(".grupo-planta").addEventListener("click", (e) => {
-            e.stopPropagation();
-            openLightbox(plantasEmp, pf.idx);
-          });
-        }
-        const uw = gEl.querySelector(".units");
-        g.unidades.forEach((u) => uw.appendChild(unitTile(emp, g, u)));
-        gw.appendChild(gEl);
-      });
-      body.appendChild(gw);
-    }
-
-    // consulta (Boulevard)
-    if (emp.consulta) {
-      const c = el(`
-        <div class="consulta">
-          <div>
-            <div class="ct">Unidades sob consulta</div>
-            <div class="cd">${emp.condicoes || "Entre em contato para conhecer as unidades disponíveis."}</div>
-          </div>
-          <a class="btn-ghost btn-wa" target="_blank" href="${waLink(
-            `Olá! Tenho interesse no ${emp.nome} (${emp.cidade}). Pode me enviar os valores e disponibilidade?`
-          )}">${waSvg()} Consultar no WhatsApp</a>
-        </div>`);
-      body.appendChild(c);
-    }
-
-    // terrenos
-    if (emp.terrenos && emp.terrenos.length) {
-      const tbl = el(`
-        <div class="ter-table">
-          <div class="ter-row head">
-            <span>Quadra / Lote</span><span>Rua</span><span>Área</span><span>Valor</span><span></span>
-          </div>
-        </div>`);
-      emp.terrenos.forEach((t) => {
-        const st = t.status || "disponivel";
-        const vendido = st === "vendido";
-        const acao = vendido
-          ? `<span class="st st-vendido ta">Vendido</span>`
-          : `<a class="btn-ghost btn-wa ta" target="_blank" href="${waLink(
-              `Olá! Tenho interesse no terreno ${t.lote ? t.lote + " — " : ""}Quadra ${t.quadra} Lote ${t.numero} (${t.rua})${t.area ? ", " + t.area + "m²" : ""}${t.preco ? " — " + fmtBRLshort(t.preco) : ""}.`
-            )}">${waSvg()} Interesse</a>`;
-        const row = el(`
-          <div class="ter-row" data-status="${st}" data-price="${t.preco || 0}"
-            data-search="${((t.lote || "") + " " + t.rua + " quadra " + t.quadra + " lote " + t.numero + " terreno").toLowerCase()}">
-            <span class="tl">Q ${t.quadra} · Lote ${t.numero}${t.lote ? `<span class="tl-sub">${t.lote}</span>` : ""}</span>
-            <span class="tc">${t.rua}</span>
-            <span class="tc">${t.area ? t.area.toLocaleString("pt-BR") + " m²" : "—"}</span>
-            <span class="tp">${t.preco ? fmtBRL(t.preco) : "—"}</span>
-            ${acao}
-          </div>`);
-        tbl.appendChild(row);
-      });
-      body.appendChild(tbl);
-    }
-
-    // outros imóveis
-    if (emp.outros && emp.outros.length) {
-      const grid = el(`<div class="outros-grid"></div>`);
-      emp.outros.forEach((o) => {
-        const card = el(`
-          <div class="outro-card" data-status="${o.status}" data-price="${o.preco}"
-            data-search="${(o.nome + " " + o.local + " " + o.descricao).toLowerCase()}">
-            <div class="ol">${o.local}</div>
-            <h3>${o.nome}</h3>
-            <div class="od">${o.descricao}</div>
-            <div class="oa">${o.area}</div>
-            <div class="of">
-              <div class="op">${o.precoPrefixo ? `<small>${o.precoPrefixo}</small>` : ""}${fmtBRL(o.preco)}</div>
-              <span class="st st-${o.status}">${STATUS_LABEL[o.status]}</span>
-            </div>
-            ${o.obs ? `<div class="modal-obs" style="margin-top:10px">${o.obs}</div>` : ""}
-            <div class="emp-actions" style="margin-top:16px">
-              <a class="btn-ghost btn-wa" target="_blank" href="${waLink(
-                `Olá! Tenho interesse no imóvel ${o.nome} (${o.local}) — ${fmtBRLshort(o.preco)}.`
-              )}">${waSvg()} Tenho interesse</a>
-            </div>
-          </div>`);
-        grid.appendChild(card);
-      });
-      body.appendChild(grid);
-    }
-
-    // localização (mapa + link Google Maps)
-    const { fotos, plantas, mapas } = splitMedia(emp);
-    const loc = LOCAIS[emp.id] || {};
-    if (mapas.length || loc.mapsUrl) {
-      const locBox = el(`<div class="emp-block"></div>`);
-      locBox.appendChild(el(`<div class="block-title">${pinSvg()} Localização</div>`));
-      if (mapas.length) {
-        const mimg = el(`<img class="loc-map" src="${mapas[0].src}" alt="Mapa ${emp.nome}">`);
-        mimg.addEventListener("click", () => openLightbox(mapas, 0));
-        locBox.appendChild(mimg);
-      }
-      if (emp.localizacao) locBox.appendChild(el(`<div class="loc-addr">${emp.localizacao}</div>`));
-      if (loc.mapsUrl)
-        locBox.appendChild(
-          el(`<a class="btn-ghost" target="_blank" href="${loc.mapsUrl}">${pinSvg()} Abrir no Google Maps</a>`)
-        );
-      body.appendChild(locBox);
-    }
-
-    // (bloco de vídeo removido a pedido)
-
-    // ações: ver fotos / ver planta
-    if (fotos.length || plantas.length || emp.folder) {
-      const act = el(`<div class="emp-actions"></div>`);
-      if (emp.folder) {
-        act.appendChild(
-          el(`<a class="btn-ghost btn-folder" href="${emp.folder}" target="_blank" rel="noopener" download>${pdfSvg()} Baixar folder (PDF)</a>`)
-        );
-      }
-      if (fotos.length) {
-        const b = el(`<button class="btn-ghost">${galSvg()} Ver fotos (${fotos.length})</button>`);
-        b.addEventListener("click", () => openLightbox(fotos, 0));
-        act.appendChild(b);
-      }
-      if (plantas.length) {
-        const b = el(`<button class="btn-ghost btn-planta">${planSvg()} Ver planta (${plantas.length})</button>`);
-        b.addEventListener("click", () => openLightbox(plantas, 0));
-        act.appendChild(b);
-      }
-      body.appendChild(act);
-    }
-
-    const backBtm = el(`<button class="btn-back btn-back-btm">${"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\"><path d=\"M15 18l-6-6 6-6\"/></svg>"} Voltar aos empreendimentos</button>`);
-    backBtm.addEventListener("click", showHome);
-    body.appendChild(backBtm);
-
-    sec.appendChild(body);
-    return sec;
-  }
-
-  EMPREENDIMENTOS.forEach((e) => main.appendChild(renderEmp(e)));
-
-  // ---------- quick nav cards ----------
-  const qn = document.getElementById("quicknav");
-  function empDisponiveis(emp) {
-    let n = 0;
-    (emp.grupos || []).forEach((g) =>
-      g.unidades.forEach((u) => u.status !== "vendido" && u.status !== "reservado" && n++)
-    );
-    (emp.terrenos || []).forEach((t) => {
-      if ((t.status || "disponivel") !== "vendido") n++;
-    });
-    (emp.outros || []).forEach((o) => o.status !== "vendido" && o.status !== "reservado" && n++);
-    return n;
-  }
-  function empMinPreco(emp) {
-    let min = Infinity;
-    (emp.grupos || []).forEach((g) =>
-      g.unidades.forEach((u) => {
-        if (u.status !== "vendido" && u.status !== "reservado" && u.preco) min = Math.min(min, u.preco);
-      })
-    );
-    (emp.terrenos || []).forEach((t) => {
-      if ((t.status || "disponivel") !== "vendido" && t.preco) min = Math.min(min, t.preco);
-    });
-    (emp.outros || []).forEach((o) => {
-      if (o.status !== "vendido" && o.status !== "reservado" && o.preco) min = Math.min(min, o.preco);
-    });
-    return min === Infinity ? null : min;
-  }
-  EMPREENDIMENTOS.forEach((emp) => {
-    const thumb = emp.hero || (emp.galeria && emp.galeria[0] && emp.galeria[0].src);
-    const disp = empDisponiveis(emp);
-    const isOutros = emp.outros && emp.outros.length;
-    const cnt = isOutros ? emp.outros.length : disp;
-    const countLabel = emp.consulta
-      ? "Sob consulta"
-      : isOutros
-      ? `${emp.outros.length} ${emp.outros.length === 1 ? "imóvel" : "imóveis"}`
-      : disp + (disp === 1 ? " disponível" : " disponíveis");
-    const stCls = emp.status === "pronto" ? "pronto" : "obra";
-    const minPreco = empMinPreco(emp);
-    const catLabel = emp.categoria === "terreno" ? "Terrenos" : emp.categoria === "comercial" ? "Salas comerciais" : "Apartamentos";
-    const card = el(`
-      <button class="qn-card" data-target="emp-${emp.id}">
-        <div class="qn-thumb">
-          ${thumb ? `<img src="${thumb}" alt="${emp.nome}">` : `<div class="qn-noimg">${catLabel}</div>`}
-          <span class="qn-st ${stCls}">${emp.statusLabel}</span>
-        </div>
-        <div class="qn-body">
-          <div class="qn-name">${emp.nome}</div>
-          <div class="qn-city">${emp.cidade}</div>
-          <div class="qn-foot">
-            ${minPreco ? `<div class="qn-price"><span>a partir de</span><strong>${fmtBRL(minPreco)}</strong></div>` : `<div class="qn-price consulta"><strong>Sob consulta</strong></div>`}
-            <div class="qn-count ${cnt ? "" : "zero"}">${countLabel}</div>
-          </div>
-        </div>
-      </button>`);
-    card.dataset.empId = emp.id;
-    card.dataset.cat = emp.categoria;
-    card.dataset.cidade = emp.cidade;
-    card.dataset.search = (emp.nome + " " + emp.cidade).toLowerCase();
-    card.addEventListener("click", () => showDetail(emp.id));
-    qn.appendChild(card);
-  });
-
-  // ---------- home / detail view ----------
-  const backBar = document.getElementById("back-bar");
-  const backTitle = document.getElementById("back-title");
-  function showDetail(id) {
-    const emp = EMPREENDIMENTOS.find((e) => e.id === id);
-    if (!emp) return;
-    document.body.classList.add("detail-mode");
-    EMPREENDIMENTOS.forEach((e) =>
-      document.getElementById("emp-" + e.id).classList.toggle("active-detail", e.id === id)
-    );
-    backTitle.textContent = emp.nome;
-    try { history.replaceState(null, "", "#emp-" + id); } catch (e) {}
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }
-  function showHome() {
-    document.body.classList.remove("detail-mode");
-    EMPREENDIMENTOS.forEach((e) =>
-      document.getElementById("emp-" + e.id).classList.remove("active-detail")
-    );
-    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }
-  document.getElementById("btn-back").addEventListener("click", showHome);
-
-  // abre direto um empreendimento se a URL tiver #emp-<id> (link compartilhado)
-  (function openFromHash() {
-    const m = (location.hash || "").match(/^#emp-(.+)$/);
-    if (m && EMPREENDIMENTOS.some((e) => e.id === m[1])) showDetail(m[1]);
-  })();
-
-  // ---------- filters UI ----------
-  // build cidade chips dynamically
-  const cidades = [...new Set(EMPREENDIMENTOS.map((e) => e.cidade.split(" · ")).flat())];
-  // simpler: unique by full string of residential/comercial
-  const cidadeSet = [...new Set(EMPREENDIMENTOS.map((e) => e.cidade))];
-  const cidadeBox = document.getElementById("cidade-chips");
-  function makeChip(label, val, group) {
-    const c = el(`<button class="chip" data-group="${group}" data-val="${val}">${label}</button>`);
-    if (
-      (group === "cidade" && val === state.cidade) ||
-      (group === "status" && val === state.status)
-    )
-      c.classList.add("active");
-    c.addEventListener("click", () => {
-      state[group] = val;
-      document
-        .querySelectorAll(`.chip[data-group="${group}"]`)
-        .forEach((x) => x.classList.toggle("active", x.dataset.val === val));
-      applyFilters();
-    });
-    return c;
-  }
-  cidadeBox.appendChild(makeChip("Todas as cidades", "todas", "cidade"));
-  cidadeSet
-    .filter((c) => !c.includes("·"))
-    .forEach((c) => cidadeBox.appendChild(makeChip(c, c, "cidade")));
-
-  const statusBox = document.getElementById("status-chips");
-  statusBox.appendChild(makeChip("Todos", "todos", "status"));
-  [["disponivel", "Disponível"], ["alugado", "Alugado"]].forEach(([v, l]) =>
-    statusBox.appendChild(makeChip(l, v, "status"))
-  );
-
-  // category segmented
-  document.querySelectorAll(".seg button").forEach((b) => {
-    b.addEventListener("click", () => {
-      state.cat = b.dataset.cat;
-      document
-        .querySelectorAll(".seg button")
-        .forEach((x) => x.classList.toggle("active", x === b));
-      applyFilters();
-    });
-  });
-
-  // search + faixa
-  document.getElementById("search-input").addEventListener("input", (e) => {
-    state.q = e.target.value.toLowerCase().trim();
-    applyFilters();
-  });
-  document.getElementById("faixa-select").addEventListener("change", (e) => {
-    state.faixa = e.target.value;
-    applyFilters();
-  });
-  document.getElementById("btn-clear").addEventListener("click", () => {
-    state.cat = "todos";
-    state.cidade = "todas";
-    state.status = "todos";
-    state.faixa = "todas";
-    state.q = "";
-    document.getElementById("search-input").value = "";
-    document.getElementById("faixa-select").value = "todas";
-    document.querySelectorAll(".seg button").forEach((x) =>
-      x.classList.toggle("active", x.dataset.cat === "todos")
-    );
-    document.querySelectorAll(".chip").forEach((x) =>
-      x.classList.toggle(
-        "active",
-        x.dataset.val === "todas" || x.dataset.val === "todos"
-      )
-    );
-    applyFilters();
-  });
-
-  const FAIXAS = {
-    todas: [0, Infinity],
-    "0-300": [0, 300000],
-    "300-600": [300000, 600000],
-    "600-1000": [600000, 1000000],
-    "1000+": [1000000, Infinity],
   };
 
-  // ---------- apply filters (filtra os cards da home) ----------
-  function priceMatch(price) {
-    const [lo, hi] = FAIXAS[state.faixa];
-    return price >= lo && price <= hi;
-  }
-  // pré-computa as unidades de cada empreendimento
-  const UNITS = {};
-  EMPREENDIMENTOS.forEach((emp) => {
-    const arr = [];
-    (emp.grupos || []).forEach((g) =>
-      g.unidades.forEach((u) =>
-        arr.push({
-          status: u.status,
-          price: u.preco,
-          search: (emp.nome + " " + g.tipo + " " + u.apto + " " + emp.cidade).toLowerCase(),
-        })
-      )
-    );
-    (emp.terrenos || []).forEach((t) =>
-      arr.push({
-        status: t.status || "disponivel",
-        price: t.preco || 0,
-        search: ((t.lote || "") + " " + t.rua + " q" + t.quadra + " l" + t.numero + " " + emp.cidade).toLowerCase(),
-      })
-    );
-    (emp.outros || []).forEach((o) =>
-      arr.push({ status: o.status, price: o.preco, search: (o.nome + " " + o.local).toLowerCase() })
-    );
-    if (!arr.length) arr.push({ status: "disponivel", price: 0, search: emp.nome.toLowerCase() });
-    UNITS[emp.id] = arr;
-  });
+  const compactMoney = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "Sob consulta";
+    if (n >= 1_000_000) return `R$ ${(n / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} mi`;
+    return `R$ ${Math.round(n / 1_000).toLocaleString("pt-BR")} mil`;
+  };
 
-  function applyFilters() {
-    let shown = 0;
+  const escapeHtml = (text = "") => String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+  const normalizeText = (text = "") => String(text)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  const unique = (values) => [...new Set(values.filter(Boolean))];
+  const isAvailable = (status) => (status || "disponivel") === "disponivel";
+  const isMarketable = (status) => !["vendido", "reservado"].includes(status || "disponivel");
+  const safeUrl = (url) => /^https?:\/\//i.test(url || "") ? url : `https://${url}`;
+  const whatsappUrl = (text, phone = "") => `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+
+  function enterpriseUrl(emp) {
+    if (location.protocol === "file:") return `#emp-${emp.id}`;
+    return `${location.origin}${location.pathname}#emp-${emp.id}`;
+  }
+
+  function itemLabel(item) {
+    if (item.kind === "unit") {
+      const prefix = item.emp.categoria === "comercial" ? "Sala" : "Apto";
+      return /^\d/.test(String(item.code)) ? `${prefix} ${item.code}` : String(item.code);
+    }
+    if (item.kind === "land") return `Quadra ${item.quadra} · Lote ${item.numero}`;
+    return item.nome;
+  }
+
+  function buildInventory() {
     EMPREENDIMENTOS.forEach((emp) => {
-      const card = qn.querySelector(`.qn-card[data-emp-id="${emp.id}"]`);
-      if (!card) return;
-      const catOk = state.cat === "todos" || emp.categoria === state.cat;
-      const cidadeOk =
-        state.cidade === "todas" || emp.cidade === state.cidade || emp.cidade.includes(state.cidade);
-      const nameMatch =
-        !state.q ||
-        emp.nome.toLowerCase().includes(state.q) ||
-        emp.cidade.toLowerCase().includes(state.q);
-      const hasMatch = UNITS[emp.id].some((u) => {
-        const sOk = state.status === "todos" || u.status === state.status;
-        const pOk = priceMatch(u.price);
-        const qOk = nameMatch || u.search.includes(state.q);
-        return sOk && pOk && qOk;
+      const items = [];
+
+      (emp.grupos || []).forEach((group, groupIndex) => {
+        (group.unidades || []).forEach((unit, unitIndex) => {
+          const item = {
+            key: `${emp.id}:unit:${groupIndex}:${unitIndex}`,
+            kind: "unit",
+            emp,
+            group,
+            code: unit.apto,
+            price: Number(unit.preco) || 0,
+            status: unit.status || "disponivel",
+            area: unit.areaUnit || group.area || "",
+            garage: group.garagem || "",
+            tags: unit.tags || [],
+            notes: unit.obs || group.obs || "",
+          };
+          items.push(item);
+          itemMap.set(item.key, item);
+        });
       });
-      const visible = catOk && cidadeOk && hasMatch;
-      card.classList.toggle("hidden", !visible);
-      if (visible) shown++;
+
+      (emp.terrenos || []).forEach((land, index) => {
+        const item = {
+          key: `${emp.id}:land:${index}`,
+          kind: "land",
+          emp,
+          code: `${land.quadra}-${land.numero}`,
+          quadra: land.quadra,
+          numero: land.numero,
+          lote: land.lote || emp.nome,
+          rua: land.rua || "",
+          price: Number(land.preco) || 0,
+          status: land.status || "disponivel",
+          area: land.area ? `${Number(land.area).toLocaleString("pt-BR")} m²` : "",
+          garage: "",
+          tags: [],
+          notes: "",
+        };
+        items.push(item);
+        itemMap.set(item.key, item);
+      });
+
+      (emp.outros || []).forEach((other, index) => {
+        const item = {
+          key: `${emp.id}:other:${index}`,
+          kind: "other",
+          emp,
+          code: other.nome,
+          nome: other.nome,
+          local: other.local || "",
+          description: other.descricao || "",
+          price: Number(other.preco) || 0,
+          pricePrefix: other.precoPrefixo || "",
+          status: other.status || "disponivel",
+          area: other.area || "",
+          garage: "",
+          tags: [],
+          notes: other.obs || "",
+        };
+        items.push(item);
+        itemMap.set(item.key, item);
+      });
+
+      enterpriseItems.set(emp.id, items);
     });
-    document.getElementById("count").innerHTML = `<b>${shown}</b> empreendimento${shown === 1 ? "" : "s"}`;
-    document.getElementById("empty").style.display = shown === 0 ? "block" : "none";
-  }
-  applyFilters();
 
-  // ---------- modal ----------
-  const modalBack = document.getElementById("modal-back");
-  const modal = document.getElementById("modal");
-  function openModal(emp, grupo, u) {
-    const media = empMedia(emp);
-    const area = u.areaUnit || grupo.area;
-    const heroImg = emp.hero || (media[0] && media[0].src);
-    const tags = (u.tags || []).map((t) => `<span class="utag">${t}</span>`).join(" ");
-    const tipoLabel = emp.categoria === "comercial" ? "Sala" : "Apto";
-    const unitLabel = aptoLabel(emp, u);
-    const galThumbs = media
-      .map(
-        (m, i) =>
-          `<img src="${m.src}" alt="${m.legenda || ""}" data-i="${i}">`
-      )
-      .join("");
-    modal.innerHTML = `
-      <div class="modal-hero">
-        ${heroImg ? `<img src="${heroImg}" alt="${emp.nome}">` : ""}
-        <button class="modal-close" aria-label="Fechar">✕</button>
-        <div class="modal-hero-cap">
-          <div class="me">${emp.cidade} · ${emp.statusLabel}</div>
-          <h3>${emp.nome}</h3>
+    state.selected = new Set([...state.selected].filter((key) => itemMap.has(key)));
+    saveSelection();
+  }
+
+  function itemsFor(emp) {
+    return enterpriseItems.get(emp.id) || [];
+  }
+
+  function availableItems(emp) {
+    return itemsFor(emp).filter((item) => isAvailable(item.status));
+  }
+
+  function marketableItems(emp) {
+    return itemsFor(emp).filter((item) => isMarketable(item.status));
+  }
+
+  function minPrice(emp) {
+    const priced = marketableItems(emp).map((item) => item.price).filter((price) => price > 0);
+    return priced.length ? Math.min(...priced) : 0;
+  }
+
+  function maxPrice(emp) {
+    const priced = marketableItems(emp).map((item) => item.price).filter((price) => price > 0);
+    return priced.length ? Math.max(...priced) : 0;
+  }
+
+  function mediaFor(emp) {
+    const media = [];
+    if (emp.hero) media.push({ src: emp.hero, legenda: emp.nome });
+    (emp.galeria || []).forEach((item) => {
+      if (item?.src && !media.some((current) => current.src === item.src)) media.push(item);
+    });
+    return media;
+  }
+
+  function portfolioSearchText(emp) {
+    const inventory = itemsFor(emp).map((item) => [
+      itemLabel(item), item.area, item.garage, item.rua, item.local, item.description,
+      ...(item.tags || []), item.group?.tipo, item.notes,
+    ].join(" ")).join(" ");
+    return normalizeText([
+      emp.nome, emp.cidade, emp.categoria, emp.statusLabel, emp.entrega,
+      emp.tagline, emp.localizacao, emp.condicoes,
+      ...(emp.diferenciais || []).flatMap((d) => [d.titulo, d.desc]),
+      inventory,
+    ].join(" "));
+  }
+
+  function renderMetadata() {
+    const allItems = EMPREENDIMENTOS.flatMap(itemsFor);
+    const available = allItems.filter((item) => isAvailable(item.status));
+    const marketable = allItems.filter((item) => isMarketable(item.status));
+    const cities = unique(EMPREENDIMENTOS.flatMap((emp) => emp.cidade.split(" · ")));
+    const categories = unique(EMPREENDIMENTOS.map((emp) => emp.categoria));
+
+    setText("header-date", META.dataTabela || "Não informada");
+    setText("header-available", available.length.toLocaleString("pt-BR"));
+    setText("meta-month", META.mesTabela || "—");
+    setText("meta-incc", META.incc ? `${META.incc.valor} (${META.incc.variacao})` : "—");
+    setText("meta-cities", cities.map((city) => city.replace("/RS", "")).join(" · "));
+
+    const stats = [
+      [EMPREENDIMENTOS.length, "empreendimentos"],
+      [available.length, "opções disponíveis"],
+      [marketable.length, "opções comercializáveis"],
+      [categories.length, "categorias"],
+    ];
+    document.getElementById("hero-stats").innerHTML = stats.map(([value, label]) => `
+      <div class="hero-stat"><strong>${Number(value).toLocaleString("pt-BR")}</strong><span>${escapeHtml(label)}</span></div>
+    `).join("");
+
+    const generalMessage = `Olá! Gostaria de informações sobre os imóveis da Construtora Senger. Tabela: ${META.mesTabela || "atual"}.`;
+    document.getElementById("header-whatsapp").href = whatsappUrl(generalMessage, META.contato?.whatsapp || "");
+
+    const footer = document.getElementById("footer-contacts");
+    footer.innerHTML = [
+      ...(META.contato?.telefones || []).map((phone) => `<a href="tel:${phone.replace(/\D/g, "")}">${escapeHtml(phone)}</a>`),
+      META.contato?.instagram ? `<a href="https://instagram.com/${META.contato.instagram.replace("@", "")}" target="_blank" rel="noopener">${escapeHtml(META.contato.instagram)}</a>` : "",
+      META.contato?.site ? `<a href="${safeUrl(META.contato.site)}" target="_blank" rel="noopener">${escapeHtml(META.contato.site)}</a>` : "",
+    ].join("");
+    setText("footer-address", META.contato?.endereco || "");
+    setText("footer-version", `Tabela ${META.mesTabela || ""} · atualizada em ${META.dataTabela || "—"}`);
+  }
+
+  function renderFilters() {
+    const categoryContainer = document.getElementById("category-filter");
+    categoryContainer.innerHTML = Object.entries(CATEGORY_LABELS).map(([value, label]) => `
+      <button type="button" data-category="${value}" class="${state.category === value ? "active" : ""}">${label}</button>
+    `).join("");
+
+    categoryContainer.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-category]");
+      if (!button) return;
+      state.category = button.dataset.category;
+      categoryContainer.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+      renderPortfolio();
+    });
+
+    const citySelect = document.getElementById("city-filter");
+    const cities = unique(EMPREENDIMENTOS.flatMap((emp) => emp.cidade.split(" · "))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    citySelect.innerHTML = `<option value="todos">Todas as cidades</option>${cities.map((city) => `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`).join("")}`;
+
+    document.getElementById("search-input").addEventListener("input", (event) => {
+      state.query = event.target.value.trim();
+      renderPortfolio();
+    });
+    citySelect.addEventListener("change", (event) => { state.city = event.target.value; renderPortfolio(); });
+    document.getElementById("stage-filter").addEventListener("change", (event) => { state.stage = event.target.value; renderPortfolio(); });
+    document.getElementById("price-filter").addEventListener("change", (event) => { state.price = event.target.value; renderPortfolio(); });
+    document.getElementById("available-only").addEventListener("change", (event) => { state.availableOnly = event.target.checked; renderPortfolio(); });
+    document.getElementById("sort-filter").addEventListener("change", (event) => { state.sort = event.target.value; renderPortfolio(); });
+    document.getElementById("clear-filters").addEventListener("click", clearFilters);
+    document.getElementById("empty-clear").addEventListener("click", clearFilters);
+
+    const filterToggle = document.getElementById("filter-toggle");
+    filterToggle.addEventListener("click", () => {
+      const body = document.getElementById("filters-body");
+      const open = body.classList.toggle("open");
+      filterToggle.setAttribute("aria-expanded", String(open));
+    });
+  }
+
+  function clearFilters() {
+    state.query = "";
+    state.category = "todos";
+    state.city = "todos";
+    state.stage = "todos";
+    state.price = "todos";
+    state.availableOnly = true;
+    document.getElementById("search-input").value = "";
+    document.getElementById("city-filter").value = "todos";
+    document.getElementById("stage-filter").value = "todos";
+    document.getElementById("price-filter").value = "todos";
+    document.getElementById("available-only").checked = true;
+    document.querySelectorAll("[data-category]").forEach((button) => button.classList.toggle("active", button.dataset.category === "todos"));
+    renderPortfolio();
+  }
+
+  function priceRangeMatches(emp) {
+    if (state.price === "todos") return true;
+    const [minRaw, maxRaw] = state.price.split("-");
+    const min = Number(minRaw) || 0;
+    const max = maxRaw === "inf" ? Infinity : Number(maxRaw);
+    return marketableItems(emp).some((item) => item.price > 0 && item.price >= min && item.price <= max);
+  }
+
+  function filteredEnterprises() {
+    const query = normalizeText(state.query);
+    const result = EMPREENDIMENTOS.filter((emp) => {
+      if (state.category !== "todos" && emp.categoria !== state.category) return false;
+      if (state.city !== "todos" && !emp.cidade.split(" · ").includes(state.city)) return false;
+      if (state.stage !== "todos" && emp.status !== state.stage) return false;
+      if (state.availableOnly && marketableItems(emp).length === 0) return false;
+      if (!priceRangeMatches(emp)) return false;
+      if (query && !portfolioSearchText(emp).includes(query)) return false;
+      return true;
+    });
+
+    return result.sort((a, b) => {
+      if (state.sort === "menor-preco") return (minPrice(a) || Infinity) - (minPrice(b) || Infinity);
+      if (state.sort === "maior-preco") return maxPrice(b) - maxPrice(a);
+      if (state.sort === "mais-opcoes") return marketableItems(b).length - marketableItems(a).length;
+      if (state.sort === "nome") return a.nome.localeCompare(b.nome, "pt-BR");
+      return Number(Boolean(b.destaque)) - Number(Boolean(a.destaque)) || EMPREENDIMENTOS.indexOf(a) - EMPREENDIMENTOS.indexOf(b);
+    });
+  }
+
+  function cardImage(emp) {
+    return emp.hero || "assets/fachada.jpg";
+  }
+
+  function renderPortfolio() {
+    const grid = document.getElementById("portfolio-grid");
+    const enterprises = filteredEnterprises();
+    document.getElementById("empty-state").hidden = enterprises.length > 0;
+    setHtml("results-count", `<strong>${enterprises.length}</strong> ${enterprises.length === 1 ? "empreendimento encontrado" : "empreendimentos encontrados"}`);
+
+    grid.innerHTML = enterprises.map((emp) => {
+      const active = marketableItems(emp);
+      const minimum = minPrice(emp);
+      const statusClass = emp.status === "pronto" ? "pronto" : "obra";
+      const typeLabel = CATEGORY_LABELS[emp.categoria] || emp.categoria;
+      return `
+        <article class="portfolio-card">
+          <div class="card-media">
+            <img src="${escapeHtml(cardImage(emp))}" alt="${escapeHtml(emp.nome)}" loading="lazy">
+            <div class="card-badges">
+              <span class="badge badge-stage ${statusClass}">${escapeHtml(emp.statusLabel || emp.entrega || "")}</span>
+              <span class="badge">${escapeHtml(typeLabel)}</span>
+            </div>
+            ${emp.logo ? `<img class="card-logo" src="${escapeHtml(emp.logo)}" alt="">` : ""}
+          </div>
+          <div class="card-body">
+            <span class="card-kicker">${escapeHtml(emp.cidade)}</span>
+            <h3 class="card-title">${escapeHtml(emp.nome)}</h3>
+            <p class="card-tagline">${escapeHtml(emp.tagline || emp.entrega || "Consulte informações e disponibilidade.")}</p>
+            <div class="card-metrics">
+              <div class="card-metric"><span>Opções ativas</span><strong>${active.length}</strong></div>
+              <div class="card-metric"><span>A partir de</span><strong class="price-value">${minimum ? compactMoney(minimum) : "Sob consulta"}</strong></div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <button class="button button-dark" type="button" data-open-emp="${emp.id}">Ver empreendimento</button>
+            <button class="card-share" type="button" data-share-emp="${emp.id}" aria-label="Compartilhar ${escapeHtml(emp.nome)}">↗</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    grid.querySelectorAll("[data-open-emp]").forEach((button) => button.addEventListener("click", () => navigateToEnterprise(button.dataset.openEmp)));
+    grid.querySelectorAll("[data-share-emp]").forEach((button) => button.addEventListener("click", () => shareEnterprise(findEnterprise(button.dataset.shareEmp), false)));
+    applyPriceVisibility();
+  }
+
+  function findEnterprise(id) {
+    return EMPREENDIMENTOS.find((emp) => emp.id === id);
+  }
+
+  function navigateToEnterprise(id) {
+    if (location.hash === `#emp-${id}`) renderRoute();
+    else location.hash = `emp-${id}`;
+  }
+
+  function navigateHome() {
+    history.pushState(null, "", `${location.pathname}${location.search}`);
+    renderRoute();
+  }
+
+  function renderRoute() {
+    const match = location.hash.match(/^#emp-([\w-]+)/);
+    const emp = match ? findEnterprise(match[1]) : null;
+    if (emp) renderDetail(emp);
+    else renderHome();
+  }
+
+  function renderHome() {
+    document.getElementById("home-hero").hidden = false;
+    document.querySelector(".trust-strip").hidden = false;
+    document.getElementById("catalogo").hidden = false;
+    document.getElementById("detail-view").hidden = true;
+    document.getElementById("detail-view").innerHTML = "";
+    document.title = "Construtora Senger — Portfólio Comercial";
+    applyPriceVisibility();
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function renderDetail(emp) {
+    document.getElementById("home-hero").hidden = true;
+    document.querySelector(".trust-strip").hidden = true;
+    document.getElementById("catalogo").hidden = true;
+
+    const detail = document.getElementById("detail-view");
+    detail.hidden = false;
+    document.title = `${emp.nome} — Construtora Senger`;
+
+    const media = mediaFor(emp);
+    const local = LOCAIS[emp.id] || {};
+    const active = marketableItems(emp);
+    const minimum = minPrice(emp);
+    const statusClass = emp.status === "pronto" ? "pronto" : "obra";
+    const inventory = renderInventory(emp);
+    const differentials = (emp.diferenciais || []).length ? `
+      <section class="content-section">
+        <div class="section-title-row"><h2>Diferenciais</h2><p>Características do empreendimento</p></div>
+        <div class="differentials-grid">
+          ${(emp.diferenciais || []).map((item, index) => `
+            <article class="differential-card">
+              <div class="differential-icon">${String(index + 1).padStart(2, "0")}</div>
+              <h3>${escapeHtml(item.titulo)}</h3>
+              <p>${escapeHtml(item.desc)}</p>
+            </article>
+          `).join("")}
         </div>
+      </section>
+    ` : "";
+
+    const gallery = media.length ? `
+      <section class="content-section">
+        <div class="section-title-row"><h2>Imagens e plantas</h2><p>${media.length} ${media.length === 1 ? "arquivo" : "arquivos"}</p></div>
+        <div class="gallery-grid">
+          ${media.slice(0, 7).map((item, index) => `
+            <button class="gallery-button" type="button" data-gallery-index="${index}">
+              <img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.legenda || emp.nome)}" loading="lazy">
+              <span class="gallery-caption">${escapeHtml(item.legenda || emp.nome)}</span>
+              ${index === 6 && media.length > 7 ? `<span class="gallery-more">+${media.length - 7} imagens</span>` : ""}
+            </button>
+          `).join("")}
+        </div>
+      </section>
+    ` : "";
+
+    const video = local.video ? `
+      <section class="content-section">
+        <div class="section-title-row"><h2>Vídeo do empreendimento</h2><p>Apresentação em vídeo</p></div>
+        <div class="video-frame"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(local.video)}" title="Vídeo ${escapeHtml(emp.nome)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>
+      </section>
+    ` : "";
+
+    detail.innerHTML = `
+      <section class="detail-hero">
+        <img class="detail-hero-image" src="${escapeHtml(cardImage(emp))}" alt="${escapeHtml(emp.nome)}">
+        <div class="shell detail-hero-content">
+          <button class="button detail-back" type="button" id="detail-back">← Voltar ao portfólio</button>
+          <div class="detail-title-row">
+            <div>
+              <div class="detail-badges">
+                <span class="badge badge-stage ${statusClass}">${escapeHtml(emp.statusLabel || emp.entrega || "")}</span>
+                <span class="badge">${escapeHtml(emp.cidade)}</span>
+                <span class="badge">${escapeHtml(CATEGORY_LABELS[emp.categoria] || emp.categoria)}</span>
+              </div>
+              <h1>${escapeHtml(emp.nome)}</h1>
+              <p>${escapeHtml(emp.tagline || emp.entrega || "Consulte informações e disponibilidade.")}</p>
+              <div class="detail-actions">
+                <button class="button button-primary" type="button" id="share-emp-prices">Compartilhar com preços</button>
+                <button class="button button-outline" type="button" id="share-emp-no-prices">Compartilhar sem preços</button>
+                ${local.mapsUrl ? `<a class="button button-outline" href="${escapeHtml(local.mapsUrl)}" target="_blank" rel="noopener">Ver localização</a>` : ""}
+                ${emp.folder ? `<a class="button button-outline" href="${escapeHtml(emp.folder)}" target="_blank" rel="noopener">Baixar folder</a>` : ""}
+                <button class="button button-outline" type="button" id="print-detail">Gerar PDF</button>
+              </div>
+            </div>
+            ${emp.logo ? `<img class="detail-brand-logo" src="${escapeHtml(emp.logo)}" alt="Logo ${escapeHtml(emp.nome)}">` : ""}
+          </div>
+        </div>
+      </section>
+
+      <div class="shell detail-content">
+        <div class="detail-summary-grid">
+          <article class="info-card">
+            <p class="eyebrow dark">Apresentação</p>
+            <h2>Sobre o empreendimento</h2>
+            <p>${escapeHtml(emp.localizacao || emp.tagline || "Consulte a equipe comercial para mais informações.")}</p>
+            ${emp.condicoes ? `<div class="condition-note"><strong>Condições:</strong> ${escapeHtml(emp.condicoes)}</div>` : ""}
+          </article>
+          <article class="info-card">
+            <p class="eyebrow dark">Resumo comercial</p>
+            <h2>Informações principais</h2>
+            <div class="fact-grid">
+              <div class="fact-card"><span>Etapa</span><strong>${escapeHtml(emp.entrega || emp.statusLabel || "—")}</strong></div>
+              <div class="fact-card"><span>Opções ativas</span><strong>${active.length}</strong></div>
+              <div class="fact-card"><span>Preço inicial</span><strong class="price-value">${minimum ? money(minimum) : "Sob consulta"}</strong></div>
+              <div class="fact-card"><span>Registro</span><strong>${escapeHtml((emp.ri || []).join(" · ") || "Não informado")}</strong></div>
+            </div>
+          </article>
+        </div>
+        ${differentials}
+        ${gallery}
+        ${video}
+        ${inventory}
       </div>
-      <div class="modal-body">
-        <div class="modal-facts">
-          <div class="fact"><div class="fk">Unidade</div><div class="fv">${unitLabel}</div></div>
-          <div class="fact"><div class="fk">Tipologia</div><div class="fv">${grupo.tipo}</div></div>
-          <div class="fact"><div class="fk">Área</div><div class="fv">${area}</div></div>
-          ${grupo.garagem ? `<div class="fact"><div class="fk">Garagem</div><div class="fv">${grupo.garagem}</div></div>` : ""}
-          <div class="fact"><div class="fk">Valor</div><div class="fv price">${fmtPreco(u.preco)}</div></div>
-          <div class="fact"><div class="fk">Situação</div><div class="fv"><span class="st st-${u.status}">${STATUS_LABEL[u.status]}</span> ${tags}</div></div>
-        </div>
-        ${grupo.obs ? `<div class="modal-obs">${grupo.obs}</div>` : ""}
-        ${emp.condicoes ? `<div class="modal-obs">Condições de pagamento: ${emp.condicoes}</div>` : ""}
-        ${media.length ? `<div class="modal-gallery">${galThumbs}</div>` : ""}
-        <div class="modal-cta">
-          <a class="btn-ghost btn-wa" target="_blank" href="${waLink(
-            `Olá! Tenho interesse no ${unitLabel} do ${emp.nome} (${emp.cidade})${u.preco ? " — " + fmtBRLshort(u.preco) : ""}. Podemos conversar?`
-          )}">${waSvg()} Tenho interesse neste ${tipoLabel.toLowerCase()}</a>
-          <button class="btn-ghost" id="modal-gallery-btn">${galSvg()} Ver todas as imagens</button>
-        </div>
-      </div>`;
-    modal.querySelector(".modal-close").onclick = closeModal;
-    modal.querySelectorAll(".modal-gallery img").forEach((img) =>
-      img.addEventListener("click", () => openLightbox(media, +img.dataset.i))
-    );
-    const gb = modal.querySelector("#modal-gallery-btn");
-    if (gb) gb.onclick = () => (media.length ? openLightbox(media, 0) : null);
-    modalBack.classList.add("open");
-    document.body.style.overflow = "hidden";
-  }
-  function closeModal() {
-    modalBack.classList.remove("open");
-    if (!lightbox.classList.contains("open")) document.body.style.overflow = "";
-  }
-  modalBack.addEventListener("click", (e) => {
-    if (e.target === modalBack) closeModal();
-  });
+    `;
 
-  // ---------- lightbox ----------
-  const lightbox = document.getElementById("lightbox");
-  let lbList = [],
-    lbIdx = 0;
-  function openLightbox(list, i) {
-    lbList = list;
-    lbIdx = i;
-    renderLb();
-    lightbox.classList.add("open");
-    document.body.style.overflow = "hidden";
+    document.getElementById("detail-back").addEventListener("click", navigateHome);
+    document.getElementById("share-emp-prices").addEventListener("click", () => shareEnterprise(emp, true));
+    document.getElementById("share-emp-no-prices").addEventListener("click", () => shareEnterprise(emp, false));
+    document.getElementById("print-detail").addEventListener("click", () => window.print());
+    detail.querySelectorAll("[data-gallery-index]").forEach((button) => button.addEventListener("click", () => openLightbox(media, Number(button.dataset.galleryIndex))));
+    bindInventoryEvents(detail);
+    applyPriceVisibility();
+    window.scrollTo({ top: 0, behavior: "auto" });
   }
-  function renderLb() {
-    const m = lbList[lbIdx];
-    lightbox.querySelector("img").src = m.src;
-    lightbox.querySelector(".lb-cap").textContent =
-      (m.legenda || "") + `  ·  ${lbIdx + 1}/${lbList.length}`;
+
+  function renderInventory(emp) {
+    if ((emp.grupos || []).length) return renderUnitGroups(emp);
+    if ((emp.terrenos || []).length) return renderLandInventory(emp);
+    if ((emp.outros || []).length) return renderOtherInventory(emp);
+    return "";
   }
-  function closeLb() {
-    lightbox.classList.remove("open");
-    if (!modalBack.classList.contains("open")) document.body.style.overflow = "";
+
+  function renderUnitGroups(emp) {
+    const groups = emp.grupos || [];
+    return `
+      <section class="content-section" id="unidades">
+        <div class="section-title-row"><h2>Unidades e valores</h2><p>Selecione opções para encaminhar ao cliente</p></div>
+        <div class="inventory-toolbar"><p>${marketableItems(emp).length} opções comercializáveis nesta tabela.</p><button class="button button-outline button-small" type="button" data-toggle-prices>${state.hidePrices ? "Exibir preços" : "Ocultar preços"}</button></div>
+        ${groups.map((group, groupIndex) => {
+          const units = (group.unidades || []).map((unit, unitIndex) => itemMap.get(`${emp.id}:unit:${groupIndex}:${unitIndex}`));
+          const active = units.filter((item) => isMarketable(item.status)).length;
+          return `
+            <article class="unit-group">
+              <div class="unit-group-header">
+                <div><h3>${escapeHtml(group.tipo)}</h3><p>${escapeHtml([group.area, group.garagem, group.obs].filter(Boolean).join(" · "))}</p></div>
+                <span class="group-availability">${active} ${active === 1 ? "opção ativa" : "opções ativas"}</span>
+              </div>
+              <table class="units-table">
+                <thead><tr><th>Unidade</th><th>Área</th><th>Garagem</th><th>Status</th><th>Valor</th><th></th></tr></thead>
+                <tbody>${units.map(renderUnitRow).join("")}</tbody>
+              </table>
+              <div class="mobile-units">${units.map(renderMobileUnit).join("")}</div>
+            </article>
+          `;
+        }).join("")}
+      </section>
+    `;
   }
-  lightbox.querySelector(".lb-close").onclick = closeLb;
-  lightbox.querySelector(".lb-prev").onclick = () => {
-    lbIdx = (lbIdx - 1 + lbList.length) % lbList.length;
-    renderLb();
-  };
-  lightbox.querySelector(".lb-next").onclick = () => {
-    lbIdx = (lbIdx + 1) % lbList.length;
-    renderLb();
-  };
-  lightbox.addEventListener("click", (e) => {
-    if (e.target === lightbox) closeLb();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (lightbox.classList.contains("open")) {
-      if (e.key === "Escape") closeLb();
-      if (e.key === "ArrowLeft") lightbox.querySelector(".lb-prev").click();
-      if (e.key === "ArrowRight") lightbox.querySelector(".lb-next").click();
-    } else if (modalBack.classList.contains("open") && e.key === "Escape") {
-      closeModal();
+
+  function renderUnitRow(item) {
+    const selectable = isMarketable(item.status);
+    const selected = state.selected.has(item.key);
+    return `
+      <tr>
+        <td><strong>${escapeHtml(itemLabel(item))}</strong>${item.tags.length ? `<br><small>${escapeHtml(item.tags.join(" · "))}</small>` : ""}</td>
+        <td>${escapeHtml(item.area || "—")}</td>
+        <td>${escapeHtml(item.garage || "—")}</td>
+        <td><span class="status-pill status-${item.status}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span></td>
+        <td><strong class="price-value">${money(item.price)}</strong></td>
+        <td><div class="unit-actions"><button class="unit-action" type="button" data-share-item="${item.key}">Compartilhar</button><button class="selection-control ${selected ? "selected" : ""}" type="button" data-select-item="${item.key}" ${selectable ? "" : "disabled"}>${selected ? "Selecionado" : "Selecionar"}</button></div></td>
+      </tr>
+    `;
+  }
+
+  function renderMobileUnit(item) {
+    const selectable = isMarketable(item.status);
+    const selected = state.selected.has(item.key);
+    return `
+      <article class="mobile-unit-card">
+        <div class="mobile-unit-head"><strong>${escapeHtml(itemLabel(item))}</strong><span class="status-pill status-${item.status}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span></div>
+        <div class="mobile-unit-meta">
+          <div><span>Área</span><strong>${escapeHtml(item.area || "—")}</strong></div>
+          <div><span>Valor</span><strong class="price-value">${money(item.price)}</strong></div>
+        </div>
+        <div class="mobile-unit-actions"><button class="unit-action" type="button" data-share-item="${item.key}">Compartilhar</button><button class="selection-control ${selected ? "selected" : ""}" type="button" data-select-item="${item.key}" ${selectable ? "" : "disabled"}>${selected ? "Selecionado" : "Selecionar"}</button></div>
+      </article>
+    `;
+  }
+
+  function renderLandInventory(emp) {
+    const items = itemsFor(emp);
+    return `
+      <section class="content-section" id="unidades">
+        <div class="section-title-row"><h2>Lotes e valores</h2><p>Disponibilidade por quadra e lote</p></div>
+        <div class="inventory-toolbar"><p>${marketableItems(emp).length} opções comercializáveis nesta tabela.</p><button class="button button-outline button-small" type="button" data-toggle-prices>${state.hidePrices ? "Exibir preços" : "Ocultar preços"}</button></div>
+        <div class="land-grid">${items.map((item) => renderOpportunity(item, `${item.lote || emp.nome}`, [itemLabel(item), item.rua, item.area])).join("")}</div>
+      </section>
+    `;
+  }
+
+  function renderOtherInventory(emp) {
+    const items = itemsFor(emp);
+    return `
+      <section class="content-section" id="unidades">
+        <div class="section-title-row"><h2>Imóveis disponíveis</h2><p>Oportunidades complementares</p></div>
+        <div class="other-grid">${items.map((item) => renderOpportunity(item, item.nome, [item.local, item.area], item.description)).join("")}</div>
+      </section>
+    `;
+  }
+
+  function renderOpportunity(item, title, chips, description = "") {
+    const selectable = isMarketable(item.status);
+    const selected = state.selected.has(item.key);
+    return `
+      <article class="opportunity-card">
+        <span class="status-pill status-${item.status}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span>
+        <h3>${escapeHtml(title)}</h3>
+        ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+        <div class="opportunity-data">${chips.filter(Boolean).map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>
+        <div class="opportunity-price price-value">${item.pricePrefix ? `${escapeHtml(item.pricePrefix)} ` : ""}${money(item.price)}</div>
+        ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ""}
+        <div class="opportunity-actions"><button class="unit-action" type="button" data-share-item="${item.key}">Compartilhar</button><button class="selection-control ${selected ? "selected" : ""}" type="button" data-select-item="${item.key}" ${selectable ? "" : "disabled"}>${selected ? "Selecionado" : "Selecionar"}</button></div>
+      </article>
+    `;
+  }
+
+  function bindInventoryEvents(root) {
+    root.querySelectorAll("[data-share-item]").forEach((button) => button.addEventListener("click", () => shareItem(itemMap.get(button.dataset.shareItem), true)));
+    root.querySelectorAll("[data-select-item]").forEach((button) => button.addEventListener("click", () => toggleSelection(button.dataset.selectItem)));
+    root.querySelectorAll("[data-toggle-prices]").forEach((button) => button.addEventListener("click", togglePrices));
+  }
+
+  function enterpriseMessage(emp, includePrices) {
+    const items = marketableItems(emp);
+    const lines = [
+      `*${emp.nome} — Construtora Senger*`,
+      emp.cidade,
+      emp.tagline || emp.entrega || "",
+      "",
+    ];
+    if (includePrices) {
+      lines.push(`Valores a partir de: *${minPrice(emp) ? money(minPrice(emp)) : "sob consulta"}*`);
+      lines.push(`${items.length} ${items.length === 1 ? "opção comercializável" : "opções comercializáveis"} na tabela.`);
+    } else {
+      lines.push(`${items.length} ${items.length === 1 ? "opção comercializável" : "opções comercializáveis"}. Consulte valores e condições.`);
     }
-  });
+    if (emp.entrega) lines.push(`Etapa: ${emp.entrega}`);
+    lines.push("", `Veja a apresentação completa: ${enterpriseUrl(emp)}`, "", `Tabela ${META.mesTabela || ""}, atualizada em ${META.dataTabela || "—"}. Valores e disponibilidade sujeitos a alteração.`);
+    return lines.filter((line, index, array) => line !== "" || array[index - 1] !== "").join("\n");
+  }
 
-  // ---------- footer fill ----------
-  const fc = document.getElementById("foot-contacts");
-  META.contato.telefones.forEach((t) =>
-    fc.appendChild(el(`<a href="tel:${t.replace(/\D/g, "")}">${t}</a>`))
-  );
-  const fl = document.getElementById("foot-links");
-  fl.appendChild(el(`<a href="${waGeneral}" target="_blank">WhatsApp</a>`));
-  fl.appendChild(
-    el(`<a href="https://instagram.com/construtorasenger" target="_blank">${META.contato.instagram}</a>`)
-  );
-  fl.appendChild(
-    el(`<a href="https://${META.contato.site}" target="_blank">${META.contato.site}</a>`)
-  );
-  document.getElementById("foot-endereco").textContent = META.contato.endereco;
-  document.getElementById("foot-data").textContent =
-    "Tabela " + META.mesTabela + " · atualizada em " + META.dataTabela;
+  function itemMessage(item, includePrice) {
+    const lines = [
+      `*${item.emp.nome} — ${itemLabel(item)}*`,
+      item.emp.cidade,
+    ];
+    if (item.group?.tipo) lines.push(item.group.tipo);
+    if (item.description) lines.push(item.description);
+    if (item.area) lines.push(`Área: ${item.area}`);
+    if (item.garage) lines.push(`Garagem: ${item.garage}`);
+    if (item.rua) lines.push(`Localização: ${item.rua}`);
+    if (item.tags?.length) lines.push(`Diferencial: ${item.tags.join(" · ")}`);
+    if (includePrice) lines.push(`Valor: *${money(item.price)}*`);
+    else lines.push("Valor: consulte a equipe comercial");
+    lines.push(`Status: ${STATUS_LABELS[item.status] || item.status}`);
+    if (item.notes) lines.push(item.notes);
+    lines.push("", `Apresentação: ${enterpriseUrl(item.emp)}`, `Tabela ${META.mesTabela || ""}, atualizada em ${META.dataTabela || "—"}. Valores e disponibilidade sujeitos a alteração.`);
+    return lines.join("\n");
+  }
 
-  // ---------- svg icons ----------
-  function waSvg() {
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2zm5.8 14.13c-.24.68-1.42 1.31-1.96 1.36-.5.05-.99.24-3.32-.7-2.79-1.13-4.55-3.99-4.69-4.18-.14-.19-1.13-1.5-1.13-2.86 0-1.36.71-2.03.96-2.31.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.81 1.91.88 2.05.07.14.12.3.02.49-.1.19-.14.3-.28.46-.14.16-.3.36-.42.49-.14.14-.29.29-.12.57.17.27.74 1.22 1.59 1.98 1.1.97 2.02 1.28 2.3 1.42.28.14.45.12.61-.07.16-.19.71-.82.9-1.1.19-.28.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.21.53.32.07.12.07.66-.17 1.34z"/></svg>`;
+  async function sendShare(text, title = "Construtora Senger") {
+    if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+      try {
+        await navigator.share({ title, text });
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+    window.open(whatsappUrl(text), "_blank", "noopener");
   }
-  function pinSvg() {
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+
+  function shareEnterprise(emp, includePrices) {
+    if (!emp) return;
+    sendShare(enterpriseMessage(emp, includePrices), emp.nome);
   }
-  function galSvg() {
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
+
+  function shareItem(item, includePrice) {
+    if (!item) return;
+    sendShare(itemMessage(item, includePrice), `${item.emp.nome} — ${itemLabel(item)}`);
   }
-  function planSvg() {
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 9v12M9 3v6"/></svg>`;
+
+  function togglePrices() {
+    state.hidePrices = !state.hidePrices;
+    storage.set("senger-hide-prices", String(state.hidePrices));
+    applyPriceVisibility();
+    showToast(state.hidePrices ? "Preços ocultados na tela." : "Preços exibidos na tela.");
   }
-  function playSvg() {
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg>`;
+
+  function applyPriceVisibility() {
+    document.body.classList.toggle("price-hidden", state.hidePrices);
+    const mainToggle = document.getElementById("toggle-prices");
+    mainToggle.textContent = state.hidePrices ? "Exibir preços" : "Ocultar preços";
+    mainToggle.setAttribute("aria-pressed", String(state.hidePrices));
+    document.querySelectorAll("[data-toggle-prices]").forEach((button) => { button.textContent = state.hidePrices ? "Exibir preços" : "Ocultar preços"; });
   }
-  function pdfSvg() {
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>`;
+
+  function toggleSelection(key) {
+    const item = itemMap.get(key);
+    if (!item || !isMarketable(item.status)) return;
+    if (state.selected.has(key)) state.selected.delete(key);
+    else state.selected.add(key);
+    saveSelection();
+    updateSelectionUi();
+
+    document.querySelectorAll("[data-select-item]").forEach((button) => {
+      if (button.dataset.selectItem !== key) return;
+      const selected = state.selected.has(key);
+      button.classList.toggle("selected", selected);
+      button.textContent = selected ? "Selecionado" : "Selecionar";
+    });
+    showToast(state.selected.has(key) ? "Imóvel adicionado à seleção." : "Imóvel removido da seleção.");
   }
-  // ícone por diferencial (palavras-chave) — traço fino, herda a cor
-  function difIcon(t) {
-    const s = (t || "").toLowerCase();
-    const I = {
-      energia: '<path d="M12 3v2M5 8l1.5 1.5M19 8l-1.5 1.5M4 14h3M17 14h3"/><path d="M9 18a4 4 0 0 1 6 0"/><path d="M8 14a4 4 0 0 1 8 0z"/>',
-      eletrico: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
-      carro: '<path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13v5h-2v-2H7v2H5z"/><circle cx="7.5" cy="15.5" r="1.2"/><circle cx="16.5" cy="15.5" r="1.2"/>',
-      automacao: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9v6M12 9v6M16 9v6"/><circle cx="8" cy="11" r="1.2" fill="currentColor"/><circle cx="16" cy="13" r="1.2" fill="currentColor"/>',
-      seguranca: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9.5 12l1.8 1.8 3.2-3.6"/>',
-      lazer: '<path d="M12 3l1.8 4.6L18.5 9l-3.7 3 1.2 4.8L12 14.4 8 16.8 9.2 12 5.5 9l4.7-1.4z"/>',
-      fitness: '<path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10"/>',
-      festa: '<path d="M5 20l4-12 7 7z"/><path d="M14 4l1 1M18 6l-1 1M19 10h-1M16 2l.5 1.5"/>',
-      localizacao: '<path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
-      padrao: '<path d="M5 9l3-4h8l3 4-7 11z"/><path d="M5 9h14M10 5l-1 4 3 11 3-11-1-4"/>',
-      estrutura: '<path d="M4 21V7l7-4 7 4v14"/><path d="M9 21v-5h6v5M9 9h2M13 9h2M9 12h2M13 12h2"/>',
-      elevador: '<rect x="6" y="3" width="12" height="18" rx="1"/><path d="M12 3v18M9.5 8l-1.5 2h3zM14.5 8l1.5 2h-3z" fill="currentColor"/>',
-      acessivel: '<circle cx="12" cy="5" r="1.6"/><path d="M9 9h6M12 9v5l3 5M9 11l-1 4"/>',
-      design: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10.5c-.6.6-1 1.3-1 2.1H9c0-.8-.4-1.5-1-2.1A6 6 0 0 1 12 3z"/>',
-      praticidade: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-      conforto: '<path d="M4 13v5M20 13v5M5 13h14a2 2 0 0 1 2 2v1H3v-1a2 2 0 0 1 2-2z"/><path d="M6 13v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/>',
-      check: '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
-    };
-    let p;
-    if (/energia|solar|renov/.test(s)) p = I.energia;
-    else if (/el[eé]tric/.test(s)) p = I.eletrico;
-    else if (/garagem|box|vaga|carro/.test(s)) p = I.carro;
-    else if (/comodidade|persiana|automa|controle|smart/.test(s)) p = I.automacao;
-    else if (/seguran|fechadura|biometr/.test(s)) p = I.seguranca;
-    else if (/fitness|academia|bicicl/.test(s)) p = I.fitness;
-    else if (/festa|sal[ãa]o|pub|kids|rooftop|lounge|sunset/.test(s)) p = I.festa;
-    else if (/lazer|conviv|bem-estar|piscina/.test(s)) p = I.lazer;
-    else if (/localiza/.test(s)) p = I.localizacao;
-    else if (/elevador|maca/.test(s)) p = I.elevador;
-    else if (/acess[íi]vel|wc|banheir/.test(s)) p = I.acessivel;
-    else if (/design|led|ilumin/.test(s)) p = I.design;
-    else if (/estrutura|hall|edif[íi]cio|fachada/.test(s)) p = I.estrutura;
-    else if (/padr[ãa]o|acabamento|qualidade|refin/.test(s)) p = I.padrao;
-    else if (/conforto/.test(s)) p = I.conforto;
-    else if (/pratic|coletiv|lavanderia/.test(s)) p = I.praticidade;
-    else p = I.check;
-    return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+
+  function saveSelection() {
+    storage.set("senger-selection", JSON.stringify([...state.selected]));
   }
+
+  function updateSelectionUi() {
+    const count = state.selected.size;
+    const fab = document.getElementById("selection-fab");
+    fab.hidden = count === 0;
+    setText("selection-count", count);
+
+    const list = document.getElementById("selection-list");
+    if (!count) {
+      list.innerHTML = `<div class="drawer-empty"><strong>Nenhum imóvel selecionado.</strong><p>Use o botão “Selecionar” nas unidades para montar uma apresentação rápida.</p></div>`;
+    } else {
+      list.innerHTML = [...state.selected].map((key) => {
+        const item = itemMap.get(key);
+        if (!item) return "";
+        return `<div class="drawer-item"><div><strong>${escapeHtml(item.emp.nome)} · ${escapeHtml(itemLabel(item))}</strong><span>${escapeHtml(item.area || item.group?.tipo || item.local || "")}</span><span class="price-value">${money(item.price)}</span></div><button class="drawer-remove" type="button" data-remove-selection="${item.key}">Remover</button></div>`;
+      }).join("");
+      list.querySelectorAll("[data-remove-selection]").forEach((button) => button.addEventListener("click", () => toggleSelection(button.dataset.removeSelection)));
+    }
+    applyPriceVisibility();
+  }
+
+  function selectedMessage(includePrices) {
+    const items = [...state.selected].map((key) => itemMap.get(key)).filter(Boolean);
+    const lines = ["*Seleção de imóveis — Construtora Senger*", ""];
+    items.forEach((item, index) => {
+      lines.push(`*${index + 1}. ${item.emp.nome} — ${itemLabel(item)}*`);
+      if (item.group?.tipo) lines.push(item.group.tipo);
+      if (item.area) lines.push(`Área: ${item.area}`);
+      if (item.garage) lines.push(`Garagem: ${item.garage}`);
+      if (item.rua) lines.push(`Localização: ${item.rua}`);
+      lines.push(includePrices ? `Valor: *${money(item.price)}*` : "Valor: consulte a equipe comercial");
+      lines.push(`Apresentação: ${enterpriseUrl(item.emp)}`, "");
+    });
+    lines.push(`Tabela ${META.mesTabela || ""}, atualizada em ${META.dataTabela || "—"}. Valores e disponibilidade sujeitos a alteração.`);
+    return lines.join("\n");
+  }
+
+  function openDrawer() {
+    const drawer = document.getElementById("selection-drawer");
+    drawer.classList.add("open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("no-scroll");
+  }
+
+  function closeDrawer() {
+    const drawer = document.getElementById("selection-drawer");
+    drawer.classList.remove("open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("no-scroll");
+  }
+
+  function openLightbox(media, index) {
+    state.lightbox.media = media;
+    state.lightbox.index = index;
+    updateLightbox();
+    const box = document.getElementById("lightbox");
+    box.classList.add("open");
+    box.setAttribute("aria-hidden", "false");
+    document.body.classList.add("no-scroll");
+  }
+
+  function closeLightbox() {
+    const box = document.getElementById("lightbox");
+    box.classList.remove("open");
+    box.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("no-scroll");
+  }
+
+  function updateLightbox() {
+    const item = state.lightbox.media[state.lightbox.index];
+    if (!item) return;
+    document.getElementById("lightbox-image").src = item.src;
+    document.getElementById("lightbox-image").alt = item.legenda || "Imagem do empreendimento";
+    setText("lightbox-caption", `${item.legenda || ""} · ${state.lightbox.index + 1}/${state.lightbox.media.length}`);
+    document.getElementById("lightbox-prev").hidden = state.lightbox.media.length < 2;
+    document.getElementById("lightbox-next").hidden = state.lightbox.media.length < 2;
+  }
+
+  function moveLightbox(direction) {
+    const total = state.lightbox.media.length;
+    if (!total) return;
+    state.lightbox.index = (state.lightbox.index + direction + total) % total;
+    updateLightbox();
+  }
+
+  let toastTimer;
+  function showToast(message) {
+    const toast = document.getElementById("toast");
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
+  }
+
+  function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  }
+
+  function setHtml(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.innerHTML = value;
+  }
+
+  function bindGlobalEvents() {
+    document.getElementById("brand-home").addEventListener("click", navigateHome);
+    document.getElementById("toggle-prices").addEventListener("click", togglePrices);
+    document.getElementById("print-catalog").addEventListener("click", () => window.print());
+    document.getElementById("selection-fab").addEventListener("click", openDrawer);
+    document.querySelectorAll("[data-close-drawer]").forEach((button) => button.addEventListener("click", closeDrawer));
+    document.getElementById("clear-selection").addEventListener("click", () => {
+      state.selected.clear();
+      saveSelection();
+      updateSelectionUi();
+      closeDrawer();
+      renderRoute();
+      showToast("Seleção limpa.");
+    });
+    document.getElementById("share-selected-prices").addEventListener("click", () => state.selected.size && sendShare(selectedMessage(true), "Seleção de imóveis"));
+    document.getElementById("share-selected-no-prices").addEventListener("click", () => state.selected.size && sendShare(selectedMessage(false), "Seleção de imóveis"));
+
+    document.querySelectorAll("[data-close-lightbox]").forEach((button) => button.addEventListener("click", closeLightbox));
+    document.getElementById("lightbox-prev").addEventListener("click", () => moveLightbox(-1));
+    document.getElementById("lightbox-next").addEventListener("click", () => moveLightbox(1));
+
+    window.addEventListener("hashchange", renderRoute);
+    window.addEventListener("popstate", renderRoute);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { closeDrawer(); closeLightbox(); }
+      if (document.getElementById("lightbox").classList.contains("open") && event.key === "ArrowLeft") moveLightbox(-1);
+      if (document.getElementById("lightbox").classList.contains("open") && event.key === "ArrowRight") moveLightbox(1);
+    });
+  }
+
+  function registerServiceWorker() {
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  }
+
+  buildInventory();
+  renderMetadata();
+  renderFilters();
+  bindGlobalEvents();
+  updateSelectionUi();
+  renderPortfolio();
+  renderRoute();
+  registerServiceWorker();
 })();

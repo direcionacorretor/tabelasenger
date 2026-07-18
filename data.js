@@ -220,12 +220,12 @@ const EMPREENDIMENTOS = [
       { titulo: "Térreo comercial", desc: "Salas comerciais no pavimento térreo." },
     ],
     galeria: [
-      { src: "assets/ren-planta-3s-frente-dir.png", legenda: "Planta humanizada — 3 suítes frente (direita)" },
-      { src: "assets/ren-planta-3s-frente-esq.png", legenda: "Planta humanizada — 3 suítes frente (esquerda)" },
-      { src: "assets/ren-planta-3s-superior.png", legenda: "Planta humanizada — 3 suítes superior" },
+      { src: "assets/ren-planta-3s-frente-dir.webp", legenda: "Planta humanizada — 3 suítes frente (direita)" },
+      { src: "assets/ren-planta-3s-frente-esq.webp", legenda: "Planta humanizada — 3 suítes frente (esquerda)" },
+      { src: "assets/ren-planta-3s-superior.webp", legenda: "Planta humanizada — 3 suítes superior" },
       { src: "assets/ren-planta-2suites.jpg", legenda: "Planta humanizada — 2 suítes" },
-      { src: "assets/ren-planta-504.png", legenda: "Planta humanizada — Casa Suspensa 2 suítes (504)" },
-      { src: "assets/ren-planta-604.png", legenda: "Planta humanizada — 2 suítes (final 04)" },
+      { src: "assets/ren-planta-504.webp", legenda: "Planta humanizada — Casa Suspensa 2 suítes (504)" },
+      { src: "assets/ren-planta-604.webp", legenda: "Planta humanizada — 2 suítes (final 04)" },
     ],
     grupos: [
       {

@@ -1,172 +1,192 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Construtora Senger — Tabela de Preços e Disponibilidade</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#182129">
+  <meta name="description" content="Portfólio comercial, preços e disponibilidade dos empreendimentos da Construtora Senger.">
+  <title>Construtora Senger — Portfólio Comercial</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
 
-  <template id="__bundler_thumbnail">
-    <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
-      <rect width="400" height="300" fill="#26313B"/>
-      <g transform="translate(150,96)">
-        <rect x="0" y="40" width="34" height="96" fill="#ffffff"/>
-        <rect x="40" y="16" width="34" height="120" fill="#ffffff"/>
-        <rect x="80" y="54" width="34" height="82" fill="#178FA0"/>
-      </g>
-      <text x="200" y="206" text-anchor="middle" fill="#ffffff" font-family="'Montserrat',sans-serif" font-weight="700" font-size="34" letter-spacing="4">SENGER</text>
-      <text x="200" y="234" text-anchor="middle" fill="#178FA0" font-family="'Montserrat',sans-serif" font-size="12" letter-spacing="3">TABELA DE PREÇOS</text>
-    </svg>
-  </template>
-
-  <!-- HEADER -->
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="brand">
-        <img src="assets/logo-oficial.png" alt="Construtora Senger — desde 1967">
+  <header class="site-header" id="site-header">
+    <div class="shell header-inner">
+      <button class="brand-button" id="brand-home" aria-label="Voltar ao início">
+        <img src="assets/senger-logo.png" alt="Construtora Senger">
+      </button>
+      <div class="header-summary" aria-label="Resumo da tabela">
+        <div><span>Atualização</span><strong id="header-date">—</strong></div>
+        <div><span>Disponíveis</span><strong id="header-available">—</strong></div>
       </div>
-      <div class="topbar-right">
-        <div class="topbar-meta">
-          <div class="tm"><span class="k">Tabela</span><span class="v" id="hero-mes"></span></div>
-          <div class="tm"><span class="k">Disponíveis</span><span class="v" id="hero-unid"></span></div>
-          <div class="tm"><span class="k">Atualizada</span><span class="v" id="hero-data"></span></div>
-        </div>
-        <div class="incc-badge">
-          <span class="lbl">INCC</span>
-          <span class="val" id="incc-val"></span>
-        </div>
-        <button class="btn-contact" id="btn-contact">Falar com a Senger</button>
+      <div class="header-actions">
+        <button class="button button-ghost button-small" id="toggle-prices" type="button" aria-pressed="false">Ocultar preços</button>
+        <a class="button button-primary button-small" id="header-whatsapp" href="#" target="_blank" rel="noopener">Falar com a Senger</a>
       </div>
     </div>
   </header>
 
-  <!-- BACK BAR (detail mode) -->
-  <div class="back-bar" id="back-bar">
-    <button class="btn-back" id="btn-back">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg>
-      Voltar
-    </button>
-    <span class="back-title" id="back-title"></span>
-  </div>
-
-  <!-- MASTHEAD -->
-  <section class="masthead">
-    <div class="masthead-inner">
-      <h1>Tabela de Preços</h1>
-      <div class="mh-meta">
-        <span id="ms-mes">—</span><i></i><span><strong id="ms-aptos">—</strong> aptos · <strong id="ms-terrenos">—</strong> terrenos</span><i></i><span>INCC <strong id="ms-incc">—</strong></span>
-      </div>
-    </div>
-  </section>
-
-  <!-- QUICK NAV -->
-  <section class="quicknav" id="empreendimentos">
-    <div class="quicknav-inner">
-      <p class="qn-title">Empreendimentos</p>
-      <div class="qn-grid" id="quicknav"></div>
-    </div>
-  </section>
-
-  <!-- FILTERS -->
-  <div class="filters">
-    <div class="filters-inner">
-      <div class="filter-row">
-        <div class="seg">
-          <button data-cat="todos" class="active">Todos</button>
-          <button data-cat="residencial">Residencial</button>
-          <button data-cat="comercial">Comercial</button>
-          <button data-cat="terreno">Terrenos</button>
-          <button data-cat="outros">Outros</button>
+  <main id="conteudo">
+    <section class="hero" id="home-hero">
+      <div class="hero-media" aria-hidden="true"></div>
+      <div class="hero-overlay"></div>
+      <div class="shell hero-content">
+        <p class="eyebrow">Portfólio comercial oficial</p>
+        <h1>Encontre o imóvel certo.<br><span>Apresente com segurança.</span></h1>
+        <p class="hero-copy">Empreendimentos, unidades, plantas, preços e disponibilidade em um único lugar para apoiar o atendimento dos corretores.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#catalogo">Ver empreendimentos</a>
+          <button class="button button-glass" id="print-catalog" type="button">Gerar PDF / imprimir</button>
         </div>
-        <div class="search">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="search-input" type="text" placeholder="Buscar por empreendimento, apto, cidade…">
-        </div>
+        <div class="hero-stats" id="hero-stats"></div>
       </div>
-      <div class="filter-row">
-        <div class="chip-group" id="cidade-chips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-        <span style="width:1px;height:22px;background:var(--line);margin:0 4px"></span>
-        <div class="chip-group" id="status-chips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-        <div class="select-wrap">
-          <select id="faixa-select">
-            <option value="todas">Qualquer valor</option>
-            <option value="0-300">Até R$ 300 mil</option>
-            <option value="300-600">R$ 300–600 mil</option>
-            <option value="600-1000">R$ 600 mil – 1 mi</option>
-            <option value="1000+">Acima de R$ 1 mi</option>
-          </select>
-        </div>
-        <span class="filter-meta" id="count"></span>
-        <button class="btn-clear" id="btn-clear">Limpar</button>
-      </div>
-    </div>
-  </div>
+    </section>
 
-  <!-- MAIN -->
-  <main>
-    <div class="wrap">
-      <div id="emp-list"></div>
-      <div class="empty" id="empty" style="display:none">
-        <div class="big">Nenhum imóvel encontrado</div>
-        <div>Ajuste os filtros ou limpe a busca para ver todas as opções.</div>
+    <section class="trust-strip" aria-label="Informações da tabela">
+      <div class="shell trust-grid">
+        <div><span class="trust-label">Tabela comercial</span><strong id="meta-month">—</strong></div>
+        <div><span class="trust-label">INCC informado</span><strong id="meta-incc">—</strong></div>
+        <div><span class="trust-label">Abrangência</span><strong id="meta-cities">—</strong></div>
+        <div><span class="trust-label">Consulta rápida</span><strong>WhatsApp e PDF</strong></div>
       </div>
-    </div>
+    </section>
+
+    <section class="catalog-section" id="catalogo">
+      <div class="shell">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow dark">Portfólio</p>
+            <h2>Empreendimentos e oportunidades</h2>
+          </div>
+          <p>Use os filtros para encontrar rapidamente opções compatíveis com o cliente.</p>
+        </div>
+
+        <div class="filter-panel" id="filters-panel">
+          <div class="filter-topline">
+            <label class="search-field" for="search-input">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="search-input" type="search" placeholder="Buscar empreendimento, unidade, cidade ou característica">
+            </label>
+            <button class="button button-dark button-filter-toggle" id="filter-toggle" type="button" aria-expanded="false">Filtros</button>
+          </div>
+
+          <div class="filters-body" id="filters-body">
+            <div class="filter-group filter-group-wide">
+              <span class="filter-label">Tipo de imóvel</span>
+              <div class="segmented" id="category-filter" role="group" aria-label="Tipo de imóvel"></div>
+            </div>
+            <label class="filter-group">
+              <span class="filter-label">Cidade</span>
+              <select id="city-filter"></select>
+            </label>
+            <label class="filter-group">
+              <span class="filter-label">Etapa</span>
+              <select id="stage-filter">
+                <option value="todos">Todas</option>
+                <option value="pronto">Pronto</option>
+                <option value="obra">Em obras / lançamento</option>
+              </select>
+            </label>
+            <label class="filter-group">
+              <span class="filter-label">Faixa de valor</span>
+              <select id="price-filter">
+                <option value="todos">Qualquer valor</option>
+                <option value="0-300000">Até R$ 300 mil</option>
+                <option value="300000-600000">R$ 300 a 600 mil</option>
+                <option value="600000-1000000">R$ 600 mil a 1 milhão</option>
+                <option value="1000000-inf">Acima de R$ 1 milhão</option>
+              </select>
+            </label>
+            <label class="switch-field">
+              <input id="available-only" type="checkbox" checked>
+              <span class="switch-ui" aria-hidden="true"></span>
+              <span>Somente com disponibilidade</span>
+            </label>
+            <button class="text-button" id="clear-filters" type="button">Limpar filtros</button>
+          </div>
+        </div>
+
+        <div class="results-bar">
+          <p id="results-count">—</p>
+          <label class="sort-control">Ordenar
+            <select id="sort-filter">
+              <option value="destaque">Destaques</option>
+              <option value="menor-preco">Menor preço</option>
+              <option value="maior-preco">Maior preço</option>
+              <option value="mais-opcoes">Mais opções</option>
+              <option value="nome">Nome</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="portfolio-grid" id="portfolio-grid"></div>
+        <div class="empty-state" id="empty-state" hidden>
+          <strong>Nenhuma opção encontrada.</strong>
+          <p>Altere os filtros ou limpe a busca para visualizar todo o portfólio.</p>
+          <button class="button button-dark" type="button" id="empty-clear">Limpar filtros</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-view" id="detail-view" hidden aria-live="polite"></section>
   </main>
 
-  <!-- FOOTER -->
-  <footer>
-    <div class="wrap">
-      <div class="foot-grid">
-        <div class="foot-brand">
-          <img class="fb-logo" src="assets/senger-logo-branco.png" alt="Construtora Senger">
-          <p>Empreendimentos residenciais e comerciais em Carazinho/RS e região, com a solidez e a qualidade que você procura para morar ou investir.</p>
-          <p class="foot-tagline">Solidez, confiança e futuro.</p>
-        </div>
-        <div class="foot-col">
-          <h4>Contato</h4>
-          <div id="foot-contacts"></div>
-        </div>
-        <div class="foot-col">
-          <h4>Links</h4>
-          <div id="foot-links"></div>
-        </div>
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <img class="footer-logo" src="assets/senger-logo-branco.png" alt="Construtora Senger">
+        <p>Solidez, confiança e futuro em empreendimentos residenciais, comerciais e loteamentos.</p>
       </div>
-      <div class="foot-bottom">
-        <span id="foot-endereco"></span>
-        <span id="foot-data"></span>
+      <div>
+        <h3>Contato</h3>
+        <div id="footer-contacts"></div>
+      </div>
+      <div>
+        <h3>Informações</h3>
+        <p id="footer-address"></p>
+        <p id="footer-version"></p>
       </div>
     </div>
+    <div class="shell footer-note">Valores e disponibilidade sujeitos a alteração sem aviso prévio. Imagens meramente ilustrativas. Consulte sempre as condições vigentes com a Construtora Senger.</div>
   </footer>
 
-  <div class="disclaimer">
-    <div class="wrap">
-      Valores e disponibilidade sujeitos a alteração sem aviso prévio. Imagens meramente ilustrativas. Esta tabela não constitui oferta nem proposta de venda. Consulte sempre as condições vigentes com a Construtora Senger.
+  <button class="selection-fab" id="selection-fab" type="button" hidden>
+    <span id="selection-count">0</span>
+    <span>Selecionados</span>
+  </button>
+
+  <aside class="selection-drawer" id="selection-drawer" aria-hidden="true" aria-labelledby="selection-title">
+    <div class="drawer-backdrop" data-close-drawer></div>
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <div><span class="eyebrow dark">Atendimento</span><h2 id="selection-title">Imóveis selecionados</h2></div>
+        <button class="icon-button" type="button" data-close-drawer aria-label="Fechar">×</button>
+      </div>
+      <div class="drawer-list" id="selection-list"></div>
+      <div class="drawer-footer">
+        <button class="button button-primary" id="share-selected-prices" type="button">Compartilhar com preços</button>
+        <button class="button button-outline" id="share-selected-no-prices" type="button">Compartilhar sem preços</button>
+        <button class="text-button" id="clear-selection" type="button">Limpar seleção</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="lightbox" id="lightbox" aria-hidden="true">
+    <div class="lightbox-backdrop" data-close-lightbox></div>
+    <div class="lightbox-content">
+      <button class="icon-button lightbox-close" type="button" data-close-lightbox aria-label="Fechar">×</button>
+      <button class="lightbox-nav prev" id="lightbox-prev" type="button" aria-label="Imagem anterior">‹</button>
+      <figure><img id="lightbox-image" alt=""><figcaption id="lightbox-caption"></figcaption></figure>
+      <button class="lightbox-nav next" id="lightbox-next" type="button" aria-label="Próxima imagem">›</button>
     </div>
   </div>
 
-  <!-- WhatsApp float -->
-  <button class="wa-float" id="wa-float" aria-label="WhatsApp">
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2zm5.8 14.13c-.24.68-1.42 1.31-1.96 1.36-.5.05-.99.24-3.32-.7-2.79-1.13-4.55-3.99-4.69-4.18-.14-.19-1.13-1.5-1.13-2.86 0-1.36.71-2.03.96-2.31.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.81 1.91.88 2.05.07.14.12.3.02.49-.1.19-.14.3-.28.46-.14.16-.3.36-.42.49-.14.14-.29.29-.12.57.17.27.74 1.22 1.59 1.98 1.1.97 2.02 1.28 2.3 1.42.28.14.45.12.61-.07.16-.19.71-.82.9-1.1.19-.28.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.21.53.32.07.12.07.66-.17 1.34z"/></svg>
-  </button>
-
-  <!-- MODAL -->
-  <div class="modal-back" id="modal-back">
-    <div class="modal" id="modal"></div>
-  </div>
-
-  <!-- LIGHTBOX -->
-  <div class="lightbox" id="lightbox">
-    <button class="lb-close" aria-label="Fechar">✕</button>
-    <button class="lb-nav lb-prev" aria-label="Anterior">‹</button>
-    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="">
-    <button class="lb-nav lb-next" aria-label="Próxima">›</button>
-    <div class="lb-cap"></div>
-  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="data.js"></script>
   <script src="app.js"></script>
